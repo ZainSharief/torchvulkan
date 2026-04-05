@@ -12,7 +12,7 @@ struct VulkanAllocator : public c10::Allocator {
     mutable std::mutex mutex_; // thread safety
 
     static const uint32_t SYNC_THRESHOLD = 200;
-    static const float VRAM_USAGE_LIMIT = 0.95; // leave headroom for driver allocations
+    static constexpr const float VRAM_USAGE_LIMIT = 0.95; // leave headroom for driver allocations
     mutable std::atomic<size_t> allocated_bytes{0};
     mutable std::atomic<uint32_t> num_allocations_since_sync{SYNC_THRESHOLD};
     mutable std::atomic<size_t> vram_limit{0};
