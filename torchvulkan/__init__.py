@@ -10,5 +10,8 @@ except ImportError:
 
 from . import _C
 
+def is_available() -> bool:
+    return _C.is_available()
+
 torch.utils.rename_privateuse1_backend('vulkan')
 torch._register_device_module('vulkan', object())
