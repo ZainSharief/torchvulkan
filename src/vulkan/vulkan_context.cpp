@@ -11,6 +11,7 @@ VulkanContext& VulkanContext::Instance()
 VulkanContext::VulkanContext()
 {
     initVulkan();
+    createDeviceContexts();
 }
     
 void VulkanContext::initVulkan()
@@ -43,11 +44,60 @@ void VulkanContext::initVulkan()
         TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to initialize Vulkan.");
     }
 
-    std::cout << "Vulkan Instance Created Successfully." << std::endl;
-
     volkLoadInstance(instance);
+}
 
-    std::cout << "Volk Instance Loaded Successfully." << std::endl;
+void VulkanContext::createDeviceContexts()
+{
+    uint32_t physicalDeviceCount = 0;
+    vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, nullptr);
+    if (physicalDeviceCount == 0) TORCH_CHECK(false, "torchvulkan [ERROR]: No Vulkan devices found");
+
+    std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
+    vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, physicalDevices.data());
+
+    for (const VkPhysicalDevice& physicalDevice : physicalDevices) 
+    {                
+        uint32_t queueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
+        if (queueFamilyCount == 0) continue;
+        
+        std::vector<VkQueueFamilyProperties> families(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, families.data());
+        
+        // if there is a dedicated compute core, we pick that, otherwise we pick any compute & graphics core
+        int32_t bestQueueFamily = -1;
+        for (uint32_t i = 0; i < queueFamilyCount; i++) 
+        {
+            if (!(families[i].queueFlags & VK_QUEUE_COMPUTE_BIT)) continue;
+            bestQueueFamily = i;
+            if (!(families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) break;   
+        }
+        // make sure there exists a compute core
+        if (bestQueueFamily == -1) continue;
+
+        DeviceContext* context = new DeviceContext();
+        context->physicalDevice = physicalDevice;
+        context->computeQueueFamily = bestQueueFamily;
+        vkGetPhysicalDeviceProperties(physicalDevice, &context->properties);
+
+        VkPhysicalDeviceMemoryProperties memProperties;
+        vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+        for (uint32_t i = 0; i < memProperties.memoryHeapCount; ++i) 
+        {
+            if (memProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+                context->vram_heap_index = i;
+                break;
+            }
+        }
+
+        devices.push_back(context);
+    }
+
+    if (devices.empty()) {
+        TORCH_CHECK(false, "torchvulkan [ERROR]: No compute-capable Vulkan devices found.");
+    }
 }
 
 VulkanContext::~VulkanContext() 
