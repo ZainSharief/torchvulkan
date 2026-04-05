@@ -11,4 +11,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("device_count", []() {
         return VulkanContext::Instance().getDeviceCount();
     });
+
+    m.def("synchronize", []() {
+        VulkanContext::Instance().CurrentDeviceContext()->flush();
+    });
+
+    m.def("empty_cache", []() {
+        VulkanContext::Instance().CurrentDeviceContext()->cache.clearCache();
+    });
 }

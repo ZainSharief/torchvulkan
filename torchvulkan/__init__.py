@@ -16,5 +16,11 @@ def is_available() -> bool:
 def device_count() -> int:
     return _C.device_count()
 
+def synchronize() -> None:
+    _C.synchronize()
+
+def empty_cache() -> None:
+    _C.empty_cache()
+
 torch.utils.rename_privateuse1_backend('vulkan')
 torch._register_device_module('vulkan', object())
