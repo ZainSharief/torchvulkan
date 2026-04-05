@@ -1,0 +1,82 @@
+#include "allocator.h"
+
+VulkanAllocator globalVulkanAllocator;
+REGISTER_ALLOCATOR(c10::DeviceType::PrivateUse1, &globalVulkanAllocator);
+
+c10::DataPtr VulkanAllocator::allocate(size_t nbytes)
+{
+    if (nbytes == 0) return {nullptr, nullptr, &VulkanAllocator::deleter, c10::Device(c10::DeviceType::PrivateUse1, VulkanContext::CurrentDevice())};
+    sync_memory_budget(nbytes);
+    VulkanBuffer* buffer = out_of_memory_buffer(nbytes, MemoryUsage::DEVICE_ONLY);
+    allocated_bytes.fetch_add(nbytes, std::memory_order_relaxed);
+    return {buffer, buffer, &VulkanAllocator::deleter, c10::Device(c10::DeviceType::PrivateUse1, VulkanContext::CurrentDevice())};
+}
+
+void VulkanAllocator::deleter(void* ptr)
+{    
+    if (ptr == nullptr) return;
+    VulkanBuffer* buffer = static_cast<VulkanBuffer*>(ptr);
+    globalVulkanAllocator.allocated_bytes.fetch_sub(buffer->size(), std::memory_order_relaxed);
+    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+    device->cache.deleteBuffer(buffer, MemoryUsage::DEVICE_ONLY);
+}
+
+/*
+If the allocator fails to find available memory, we flush the queue
+and then clear resources to make space in memory before trying again.
+*/
+VulkanBuffer* VulkanAllocator::out_of_memory_buffer(size_t size, MemoryUsage usage) const
+{
+    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+
+    VulkanBuffer* buffer = device->cache.allocateBuffer(size, usage);
+    if (buffer != VK_NULL_HANDLE) return buffer;
+
+    VkResult result;
+    if (allocated_bytes.load() < vram_limit.load()) {
+        buffer = new VulkanBuffer(device->allocator);
+        result = buffer->createBuffer(size, usage);
+        if (result == VK_SUCCESS) return buffer;
+    }
+
+    device->flush();
+    clearResources();
+    device->cache.softClearCache();
+    sync_memory_budget(0);
+    
+    if (allocated_bytes.load() < vram_limit.load()) {
+        result = buffer->createBuffer(size, usage);
+        if (result == VK_SUCCESS) return buffer;
+    }
+
+    TORCH_CHECK(false, "torchvulkan [ERROR]: Out of Memory");
+}
+
+void VulkanAllocator::sync_memory_budget(size_t size) const 
+{
+    if (num_allocations_since_sync.fetch_add(1, std::memory_order_relaxed) < SYNC_THRESHOLD) return;
+    
+    DeviceContext* device_context = VulkanContext::Instance().CurrentDeviceContext();
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+    vmaGetHeapBudgets(device_context->allocator, budgets); 
+
+    uint32_t heap_idx = device_context->vram_heap_index;
+    size_t os_budget = budgets[heap_idx].budget;
+    size_t actual_vma_usage = budgets[heap_idx].usage;
+
+    vram_limit.store(os_budget * VRAM_USAGE_LIMIT, std::memory_order_relaxed);
+    allocated_bytes.store(actual_vma_usage, std::memory_order_relaxed);
+    num_allocations_since_sync.store(0, std::memory_order_relaxed);
+}
+
+void VulkanAllocator::clearResources() const
+{    
+    std::lock_guard<std::mutex> lock(mutex_);
+    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+    for (size_t i = 0; i < deleteQueue.size(); i++) {
+        VulkanBuffer* buffer = deleteQueue[i];
+        device->cache.deleteBuffer(buffer, buffer->usage());
+    }
+
+    deleteQueue.clear();
+}
