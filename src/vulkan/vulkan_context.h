@@ -25,4 +25,8 @@ private:
     
     void initVulkan();
     void createDeviceContexts();
+    void createDeviceWithExtensions();
+    void createDeviceAllocator();
+    void createDeviceCommandPools();
+    void validateDevices();
 };
