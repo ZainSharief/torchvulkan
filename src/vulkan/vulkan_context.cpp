@@ -230,7 +230,7 @@ void VulkanContext::createDeviceAllocator()
 
         allocatorInfo.pVulkanFunctions = &vmaFunctions;
 
-        if (vmaCreateAllocator(&allocatorInfo, &device->allocator) != VK_SUCCESS) continue;
+        if (vmaCreateAllocator(&allocatorInfo, &device->allocator) == VK_SUCCESS) continue;
         TORCH_WARN(c10::str("torchvulkan [WARNING]: Failed to create VMA allocator for ", device->properties.deviceName));
         device->valid = false;
     }
@@ -247,7 +247,7 @@ void VulkanContext::createDeviceCommandPools()
         poolInfo.queueFamilyIndex = device->computeQueueFamily;
         poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
-        if (device->device_table.vkCreateCommandPool(device->device, &poolInfo, nullptr, &device->commandPool) != VK_SUCCESS) continue;
+        if (device->device_table.vkCreateCommandPool(device->device, &poolInfo, nullptr, &device->commandPool) == VK_SUCCESS) continue;
         TORCH_WARN(c10::str("torchvulkan [WARNING]: Failed to create a command pool for ", device->properties.deviceName));
         device->valid = false;
     }
