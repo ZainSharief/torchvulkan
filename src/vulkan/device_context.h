@@ -20,5 +20,7 @@ struct DeviceContext {
     std::mutex mutex_;
     bool valid = true;
 
+    VkCommandBuffer getCommandBuffer();
+    void flush();
     ~DeviceContext();
 };
