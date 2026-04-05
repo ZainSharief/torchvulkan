@@ -3,6 +3,17 @@
 
 #include <iostream>
 
+#ifdef _MSC_VER
+#include <intrin.h>
+static inline int __builtin_clzll(unsigned long long x) {
+    unsigned long index;
+    if (_BitScanReverse64(&index, x)) {
+        return 63 - index;
+    }
+    return 64;
+}
+#endif
+
 VkCommandBuffer VulkanCache::allocateCommandBuffer(VkCommandPool commandPool)
 {
     std::unique_lock<std::mutex> lock(mutex_);
