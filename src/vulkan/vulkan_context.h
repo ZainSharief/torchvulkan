@@ -17,6 +17,9 @@ public:
     VkInstance instance = VK_NULL_HANDLE;
     std::vector<DeviceContext*> devices;
 
+    DeviceContext* CurrentDeviceContext() { return devices[currentDeviceIndex]; }
+    static c10::DeviceIndex CurrentDevice() { return currentDeviceIndex; }
+    static void SetCurrentDevice(c10::DeviceIndex deviceIndex) { currentDeviceIndex = deviceIndex; }
     uint32_t getDeviceCount() { return devices.size(); }
 
 private:
@@ -29,4 +32,7 @@ private:
     void createDeviceAllocator();
     void createDeviceCommandPools();
     void validateDevices();
+
+    // each device creates a new currentDeviceIndex 
+    static thread_local c10::DeviceIndex currentDeviceIndex;
 };
