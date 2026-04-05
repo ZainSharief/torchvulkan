@@ -21,6 +21,108 @@ void VulkanAllocator::deleter(void* ptr)
     device->cache.deleteBuffer(buffer, MemoryUsage::DEVICE_ONLY);
 }
 
+void VulkanAllocator::copy_data(void* dest, const void* src, std::size_t count) const
+{
+    copy_host_to_device(dest, src, count);
+}
+
+void VulkanAllocator::copy_host_to_device(void* dest, const void* src, std::size_t count) const
+{
+    if (count == 0) return;
+    VulkanBuffer* dstBuffer = static_cast<VulkanBuffer*>(dest);
+    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+
+    VulkanBuffer* stagingBuffer = out_of_memory_buffer(count, MemoryUsage::HOST_TO_DEVICE);    
+    memcpy(stagingBuffer->data(), src, count);
+    stagingBuffer->flush();
+    std::unique_lock<std::mutex> lock(mutex_);
+    deleteQueue.push_back(stagingBuffer);
+    lock.unlock();
+
+    VkBufferCopy copyRegion{};
+    copyRegion.size = count;
+
+    VkCommandBuffer cmd = device->getCommandBuffer();
+    device->device_table.vkCmdCopyBuffer(cmd, stagingBuffer->buffer(), dstBuffer->buffer(), 1, &copyRegion);
+
+    VkBufferMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barrier.pNext = nullptr;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.buffer = dstBuffer->buffer();
+    barrier.offset = 0;
+    barrier.size = VK_WHOLE_SIZE;
+
+    device->device_table.vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0,
+        0, nullptr,
+        1, &barrier,
+        0, nullptr
+    );
+}
+
+void VulkanAllocator::copy_device_to_host(void* dest, const void* src, std::size_t count) const
+{
+    if (count == 0) return;
+    VulkanBuffer* srcBuffer = (VulkanBuffer*)(src);
+    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+
+    VulkanBuffer* stagingBuffer = out_of_memory_buffer(count, MemoryUsage::DEVICE_TO_HOST);
+
+    VkBufferCopy copyRegion{};
+    copyRegion.size = count;
+
+    VkCommandBuffer cmd = device->getCommandBuffer();
+    device->device_table.vkCmdCopyBuffer(cmd, srcBuffer->buffer(), stagingBuffer->buffer(), 1, &copyRegion);
+
+    device->flush();
+    clearResources();
+    stagingBuffer->invalidate();
+    memcpy(dest, stagingBuffer->data(), count);
+    device->cache.deleteBuffer(stagingBuffer, MemoryUsage::DEVICE_TO_HOST);
+}
+
+void VulkanAllocator::copy_device_to_device(void* dest, const void* src, std::size_t count) const
+{
+    if (count == 0) return;
+    VulkanBuffer* dstBuffer = static_cast<VulkanBuffer*>(dest);
+    VulkanBuffer* srcBuffer = (VulkanBuffer*)(src);
+    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+
+    VkBufferCopy copyRegion{};
+    copyRegion.size = count;
+
+    VkCommandBuffer cmd = device->getCommandBuffer();
+    device->device_table.vkCmdCopyBuffer(cmd, srcBuffer->buffer(), dstBuffer->buffer(), 1, &copyRegion);
+
+    VkBufferMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barrier.pNext = nullptr;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.buffer = dstBuffer->buffer();
+    barrier.offset = 0;
+    barrier.size = VK_WHOLE_SIZE;
+
+    device->device_table.vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0,
+        0, nullptr,
+        1, &barrier,
+        0, nullptr
+    );
+}
+
 /*
 If the allocator fails to find available memory, we flush the queue
 and then clear resources to make space in memory before trying again.
