@@ -22,7 +22,9 @@ VulkanContext::VulkanContext()
     
 void VulkanContext::initVulkan()
 { 
-    volkInitialize();
+    if (volkInitialize() != VK_SUCCESS) {
+        TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to initialize volk. Vulkan loader not found.");
+    }
 
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
