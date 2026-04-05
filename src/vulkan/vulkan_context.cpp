@@ -185,6 +185,8 @@ void VulkanContext::createDeviceWithExtensions()
 
         if (vkCreateDevice(device->physicalDevice, &createInfo, nullptr, &device->device) == VK_SUCCESS) {
             volkLoadDeviceTable(&device->device_table, device->device);
+            device->cache.setDevice(device->device);
+            device->cache.setDeviceTable(device->device_table);
             device->device_table.vkGetDeviceQueue(device->device, device->computeQueueFamily, 0, &device->computeQueue);
             continue;
         }

@@ -3,6 +3,7 @@
 #include <volk.h>
 
 #include "vk_mem_alloc.h"
+#include "cache.h"
 
 struct DeviceContext {
     VkDevice device = VK_NULL_HANDLE;
@@ -15,8 +16,9 @@ struct DeviceContext {
     VkCommandBuffer cmd = VK_NULL_HANDLE;
     VolkDeviceTable device_table;
     VkPhysicalDeviceProperties properties{};
+    VulkanCache cache;
+    std::mutex mutex_;
     bool valid = true;
 
-    bool is_valid() { return valid; }
     ~DeviceContext();
 };
