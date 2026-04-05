@@ -16,10 +16,6 @@ jobs:
         include:
           - name: Linux x86_64
             os: ubuntu-latest
-          - name: Linux ARM64
-            os: ubuntu-24.04-arm
-          - name: macOS Intel
-            os: macos-13
           - name: macOS Apple Silicon
             os: macos-14 
           - name: Windows x86_64
@@ -48,6 +44,7 @@ jobs:
         run: |
           brew install vulkan-headers vulkan-loader molten-vk          
           echo "VK_ICD_FILENAMES=/opt/homebrew/share/vulkan/icd.d/MoltenVK_icd.json:/usr/local/share/vulkan/icd.d/MoltenVK_icd.json" >> $GITHUB_ENV
+          echo "DYLD_LIBRARY_PATH=/opt/homebrew/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
 
       - name: Install Vulkan (Windows)
         if: runner.os == 'Windows'
@@ -60,7 +57,7 @@ jobs:
       - name: Install PyTorch and Build Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install torch pytest setuptools wheel ninja
+          pip install torch pytest setuptools wheel ninja --index-url https://download.pytorch.org/whl/cpu
 
       - name: Build TorchVulkan Extension
         run: |
