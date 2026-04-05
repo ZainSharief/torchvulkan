@@ -32,39 +32,22 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install Vulkan (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y vulkan-tools libvulkan-dev mesa-vulkan-drivers
-          vulkaninfo --summary
-
-      - name: Install Vulkan (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install vulkan-headers vulkan-loader molten-vk          
-          echo "VK_ICD_FILENAMES=/opt/homebrew/share/vulkan/icd.d/MoltenVK_icd.json:/usr/local/share/vulkan/icd.d/MoltenVK_icd.json" >> $GITHUB_ENV
-          echo "DYLD_LIBRARY_PATH=/opt/homebrew/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
-
-      - name: Install Vulkan (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          curl -L "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe" -o vulkan-sdk.exe
-          .\vulkan-sdk.exe --root C:\VulkanSDK --accept-licenses --default-answer --confirm-command install
-          echo "VULKAN_SDK=C:\VulkanSDK" >> $env:GITHUB_ENV
-          echo "C:\VulkanSDK\Bin" >> $env:GITHUB_PATH
+      - name: Install Vulkan SDK and SwiftShader
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 'latest'
+          install_swiftshader: true
 
       - name: Install PyTorch and Build Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install torch pytest setuptools wheel ninja --index-url https://download.pytorch.org/whl/cpu
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install pytest setuptools wheel ninja
 
       - name: Build TorchVulkan Extension
         run: |
-          # Install the local C++ backend
           pip install -e .
 
       - name: Run Pytest
         run: |
-          # Run your test suite
           pytest tests/ -v
