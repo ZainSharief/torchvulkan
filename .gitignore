@@ -1,3 +1,6 @@
+# torchvulkan
+torchvulkan/_version.py
+
 # python
 .venv/
 venv/
