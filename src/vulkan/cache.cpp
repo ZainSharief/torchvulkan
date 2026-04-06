@@ -120,6 +120,150 @@ void VulkanCache::deleteBuffer(VulkanBuffer* buffer, MemoryUsage usage)
     pools[binIndex].push_back(buffer);
 }
 
+ShaderSubmitInfo* VulkanCache::allocateShader(const torchvulkan::ShaderID shaderID, const SpecializationArgs spec)
+{
+    size_t id = static_cast<std::size_t>(shaderID);
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto& shaderMap = shaderCache[id];
+
+    auto it = shaderMap.find(spec.packedArgs);
+    if (it != shaderMap.end()) return it->second;
+
+    torchvulkan::Shader shader = torchvulkan::getShader(shaderID);
+    ShaderSubmitInfo* shaderSubmitInfo = allocatePipeline(shader, spec);
+    shaderMap[spec.packedArgs] = shaderSubmitInfo;
+    return shaderSubmitInfo;
+}
+
+VkShaderModule VulkanCache::allocateShaderModule(const torchvulkan::Shader shader)
+{
+    // assume active mutex
+    auto it = shaderModuleCache.find(static_cast<uint32_t>(shader.shaderId));
+    if (it != shaderModuleCache.end()) return it->second;
+
+    const uint32_t* spvCode = shader.binaryCode;
+    size_t spvSize = shader.binarySize;
+    
+    VkShaderModuleCreateInfo shaderInfo{};
+    shaderInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    shaderInfo.codeSize = spvSize;
+    shaderInfo.pCode = spvCode;
+
+    VkShaderModule shaderModule;
+    if (device_table.vkCreateShaderModule(device_, &shaderInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to create shader module.");
+    }
+    shaderModuleCache[static_cast<uint32_t>(shader.shaderId)] = shaderModule;
+    return shaderModule;
+}
+
+VkDescriptorSetLayout VulkanCache::allocateDescriptorSetLayout(const torchvulkan::Shader shader)
+{
+    // assume active mutex
+    auto it = descriptorSetLayoutCache.find(shader.numBindings);
+    if (it != descriptorSetLayoutCache.end()) return it->second;
+
+    VkDescriptorSetLayout descriptorSetLayout;
+    std::vector<VkDescriptorSetLayoutBinding> bindings(shader.numBindings);
+    for (uint32_t i = 0; i < shader.numBindings; ++i) {
+        bindings[i].binding = i;
+        bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[i].descriptorCount = 1;
+        bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[i].pImmutableSamplers = nullptr;
+    }
+    
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = shader.numBindings;
+    layoutInfo.pBindings = bindings.data();
+    layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+
+    if (device_table.vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+        TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to create descriptor set layout.");
+    }
+
+    descriptorSetLayoutCache[shader.numBindings] = descriptorSetLayout;
+    return descriptorSetLayout;
+}
+
+VkPipelineLayout VulkanCache::allocatePipelineLayout(const torchvulkan::Shader shader)
+{
+    // assume active mutex
+    uint64_t layoutKey = (static_cast<uint64_t>(shader.numBindings) << 32) | shader.pushConstantSize;
+    auto it = pipelineLayoutCache.find(layoutKey);
+    if (it != pipelineLayoutCache.end()) return it->second;
+
+    VkPipelineLayout pipelineLayout;
+    VkDescriptorSetLayout descriptorSetLayout = allocateDescriptorSetLayout(shader);
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+
+    VkPushConstantRange pushConstant{};
+    if (shader.pushConstantSize > 0) {
+        pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        pushConstant.offset = 0;
+        pushConstant.size = shader.pushConstantSize;
+
+        pipelineLayoutInfo.pushConstantRangeCount = 1;
+        pipelineLayoutInfo.pPushConstantRanges = &pushConstant;
+    }
+
+    if (device_table.vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+        TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to create pipeline layout.");
+    }
+
+    pipelineLayoutCache[layoutKey] = pipelineLayout;
+    return pipelineLayout;
+}
+
+ShaderSubmitInfo* VulkanCache::allocatePipeline(const torchvulkan::Shader shader, const SpecializationArgs spec)
+{
+    // assume active mutex
+    
+    VkPipeline pipeline;
+    VkPipelineLayout pipelineLayout = allocatePipelineLayout(shader);
+    VkShaderModule shaderModule = allocateShaderModule(shader);
+
+    std::vector<VkSpecializationMapEntry> mapEntries(spec.numConstants);
+    size_t totalSize = 0;
+    for (size_t i = 0; i < spec.numConstants; i++)
+    {
+        mapEntries[i].constantID = i;
+        mapEntries[i].offset = spec.offsets[i];
+        mapEntries[i].size = spec.sizes[i];
+        totalSize += spec.sizes[i];
+    }
+
+    VkSpecializationInfo specInfo{};
+    specInfo.mapEntryCount = static_cast<uint32_t>(mapEntries.size());
+    specInfo.pMapEntries = mapEntries.data();
+    specInfo.dataSize = totalSize;
+    specInfo.pData = spec.data;
+
+    VkPipelineShaderStageCreateInfo stageInfo{};
+    stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageInfo.module = shaderModule;
+    stageInfo.pName = "main";
+    stageInfo.pSpecializationInfo = &specInfo;
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage = stageInfo;
+    pipelineInfo.layout = pipelineLayout;
+    
+    if (device_table.vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+        TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to create compute pipeline.");
+    }
+
+    ShaderSubmitInfo* info = new ShaderSubmitInfo{ pipeline, pipelineLayout };
+    return info;
+}
+
 void VulkanCache::softClearCache()
 {
     if (device_ == VK_NULL_HANDLE) return;
@@ -147,4 +291,18 @@ void VulkanCache::clearCache()
     if (device_ == VK_NULL_HANDLE) return;
 
     softClearCache();
+
+    for (auto& pair : shaderModuleCache) device_table.vkDestroyShaderModule(device_, pair.second, nullptr);
+    shaderModuleCache.clear();
+
+    for (auto& pair : descriptorSetLayoutCache) device_table.vkDestroyDescriptorSetLayout(device_, pair.second, nullptr);
+    descriptorSetLayoutCache.clear();
+
+    for (auto& pair : pipelineLayoutCache) device_table.vkDestroyPipelineLayout(device_, pair.second, nullptr);
+    pipelineLayoutCache.clear();
+
+    for (auto& shaderMap : shaderCache) {
+        for (auto& pair : shaderMap) delete pair.second;
+        shaderMap.clear(); 
+    }
 }

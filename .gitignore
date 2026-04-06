@@ -1,5 +1,6 @@
 # torchvulkan
 torchvulkan/_version.py
+src/shaders/shader_registry.h
 
 # python
 .venv/

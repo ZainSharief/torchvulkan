@@ -4,13 +4,17 @@ project(torchvulkan LANGUAGES CXX)
 find_package(Torch REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+find_program(GLSLC_EXE glslc REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_subdirectory(src/shaders)
+
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 
 python3_add_library(torchvulkan_lib MODULE ${SOURCES} WITH_SOABI)
+add_dependencies(torchvulkan_lib compile_shaders)
 
 set_target_properties(torchvulkan_lib PROPERTIES OUTPUT_NAME "_C" LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/torchvulkan")
 target_link_libraries(torchvulkan_lib PRIVATE ${TORCH_LIBRARIES} Python3::Module ${CMAKE_DL_LIBS})
