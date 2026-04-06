@@ -1,0 +1,62 @@
+file(GLOB SHADER_SRCS "*.comp")
+
+set(SHADER_OUT_DIR "${CMAKE_SOURCE_DIR}/build/shaders")
+file(MAKE_DIRECTORY ${SHADER_OUT_DIR})
+
+set(SPV_FILES "")
+set(GLSLC_COMMON_FLAGS -DMAX_DIMS=4)
+
+foreach(SHADER_SRC ${SHADER_SRCS})
+    get_filename_component(SHADER_NAME ${SHADER_SRC} NAME_WE)
+
+    # FP64
+    add_custom_command(
+        OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_fp64.spv
+        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=float64_t -DVTYPE=dvec2 -DVEC_SIZE=2 -DFLOAT64 -DWG_SIZE=128 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_fp64.spv
+        DEPENDS ${SHADER_SRC}
+        COMMENT "Compiling ${SHADER_NAME} (FP64)"
+    )
+
+    # FP32
+    add_custom_command(
+        OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_fp32.spv
+        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=float -DVTYPE=vec4 -DVEC_SIZE=4 -DFLOAT32 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_fp32.spv
+        DEPENDS ${SHADER_SRC}
+        COMMENT "Compiling ${SHADER_NAME} (FP32)"
+    )
+
+    # FP16
+    add_custom_command(
+        OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_fp16.spv
+        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=float16_t -DVTYPE=f16vec4 -DVEC_SIZE=4 -DFLOAT16 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_fp16.spv
+        DEPENDS ${SHADER_SRC}
+        COMMENT "Compiling ${SHADER_NAME} (FP16)"
+    )
+
+    # INT8
+    add_custom_command(
+        OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_int8.spv
+        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=int8_t -DVTYPE=i8vec4 -DVEC_SIZE=4 -DINT8 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_int8.spv
+        DEPENDS ${SHADER_SRC}
+        COMMENT "Compiling ${SHADER_NAME} (INT8)"
+    )
+
+    list(APPEND SPV_FILES 
+        ${SHADER_OUT_DIR}/${SHADER_NAME}_fp64.spv
+        ${SHADER_OUT_DIR}/${SHADER_NAME}_fp32.spv
+        ${SHADER_OUT_DIR}/${SHADER_NAME}_fp16.spv
+        ${SHADER_OUT_DIR}/${SHADER_NAME}_int8.spv
+    )
+endforeach()
+
+set(SHADER_REGISTRY_H "${CMAKE_CURRENT_SOURCE_DIR}/shader_registry.h")
+
+add_custom_command(
+    OUTPUT ${SHADER_REGISTRY_H}
+    COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/scripts/pack_shaders.py
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    DEPENDS ${SPV_FILES} ${CMAKE_SOURCE_DIR}/scripts/pack_shaders.py
+    COMMENT "Packing shaders into ${SHADER_REGISTRY_H}"
+)
+
+add_custom_target(compile_shaders ALL DEPENDS ${SHADER_REGISTRY_H})
