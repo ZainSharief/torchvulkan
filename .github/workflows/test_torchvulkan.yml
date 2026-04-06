@@ -17,7 +17,7 @@ jobs:
           - name: Linux x86_64
             os: ubuntu-latest
           - name: macOS Apple Silicon
-            os: macos-14 
+            os: macos-14
           - name: Windows x86_64
             os: windows-latest
 
@@ -32,11 +32,62 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install Vulkan SDK and SwiftShader
-        uses: jakoch/install-vulkan-sdk-action@v1
-        with:
-          vulkan_version: 'latest'
-          install_swiftshader: true
+      - name: Install Vulkan (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y vulkan-tools libvulkan-dev mesa-vulkan-drivers
+          vulkaninfo --summary
+
+      - name: Install Vulkan (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install vulkan-headers vulkan-loader meson ninja bison flex pkg-config llvm glslang libxshmfence
+          python -m pip install mako pyyaml
+          export PATH="$(brew --prefix llvm)/bin:$(brew --prefix bison)/bin:$(brew --prefix flex)/bin:$PATH"
+          git clone --depth 1 https://gitlab.freedesktop.org/mesa/mesa.git
+          cd mesa
+
+          meson setup build \
+            -Dgallium-drivers=llvmpipe \
+            -Dvulkan-drivers=swrast \
+            -Dplatforms= \
+            -Dglx=disabled \
+            -Degl=disabled \
+            -Dgles1=disabled \
+            -Dgles2=disabled \
+            -Dopengl=false \
+            -Dshared-glapi=disabled \
+            -Dbuildtype=release \
+            --prefix=$PWD/install
+
+          meson compile -C build
+          meson install -C build
+
+          REAL_ICD=$(find $PWD/install -name "*lvp_icd*.json" | head -n 1)
+          echo "VK_ICD_FILENAMES=$REAL_ICD" >> $GITHUB_ENV
+          echo "VK_DRIVER_FILES=$REAL_ICD" >> $GITHUB_ENV
+          echo "DYLD_LIBRARY_PATH=$(brew --prefix)/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+
+      - name: Install Vulkan (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/pal1000/mesa-dist-win/releases/download/23.3.2/mesa3d-23.3.2-release-msvc.7z" -OutFile "mesa.7z"
+          7z x mesa.7z -omesa -y | Out-Null
+          
+          $lvpJson = (Resolve-Path "mesa\x64\lvp_icd.x86_64.json").Path
+          $driverKey = "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers"
+          if (!(Test-Path $driverKey)) { New-Item -Path $driverKey -Force | Out-Null }
+          New-ItemProperty -Path $driverKey -Name $lvpJson -PropertyType DWord -Value 0 -Force | Out-Null
+
+          $sdkVersion = "1.3.290.0"
+          $installer = "VulkanSDK-$sdkVersion-Installer.exe"
+          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$sdkVersion/windows/$installer" -OutFile $installer
+          Start-Process -FilePath ".\$installer" -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait -NoNewWindow
+          
+          echo "VULKAN_SDK=C:\VulkanSDK\$sdkVersion" >> $env:GITHUB_ENV
+          echo "C:\VulkanSDK\$sdkVersion\Bin" >> $env:GITHUB_PATH
 
       - name: Install PyTorch and Build Dependencies
         run: |
@@ -44,10 +95,12 @@ jobs:
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install pytest setuptools wheel ninja
 
-      - name: Build TorchVulkan Extension
+      - name: Build TorchVulkan
         run: |
           pip install -e .
 
       - name: Run Pytest
+        env:
+          VK_LOADER_DEBUG: all
         run: |
           pytest tests/ -v
