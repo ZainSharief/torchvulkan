@@ -101,7 +101,7 @@ struct Shader {{
 {chr(10).join(array_definitions)}
 
 inline constexpr Shader SHADER_CATALOG[] = {{
-{chr(10).join(catalog_entries)}
+{chr(10).join(catalog_entries) if catalog_entries else '{ ShaderID::SHADER_COUNT, nullptr, 0, 0, 0 }'}
 }};
 
 inline Shader getShader(ShaderID id) {{
