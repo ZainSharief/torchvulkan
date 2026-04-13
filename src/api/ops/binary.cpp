@@ -43,8 +43,8 @@ at::Tensor torchvulkan::divide_vulkan(const at::Tensor& self, const at::Tensor& 
     at::Tensor self_vulkan = self;
     at::Tensor other_vulkan = other;
     
-    if (at::isIntegralType(self.scalar_type(), /* includeBool = */ true)) self_vulkan = self.to(c10::kFloat);
-    if (at::isIntegralType(other.scalar_type(), /* includeBool = */ true)) other_vulkan = other.to(c10::kFloat);
+    if (at::isIntegralType(self.scalar_type(), /* includeBool = */ true)) self_vulkan = self.cpu().to(c10::kFloat).to(self.device());
+    if (at::isIntegralType(other.scalar_type(), /* includeBool = */ true)) other_vulkan = other.cpu().to(c10::kFloat).to(other.device());
 
     return binary_op_vulkan(self_vulkan, other_vulkan, 1.0, 3, [](const at::Tensor& a, const at::Tensor& b) { return at::div(a, b); });
 }
@@ -52,7 +52,7 @@ at::Tensor torchvulkan::divide_vulkan(const at::Tensor& self, const at::Tensor& 
 at::Tensor torchvulkan::divide_scalar_vulkan(const at::Tensor& self, const at::Scalar& other) {
     at::Tensor self_vulkan = self;
 
-    if (at::isIntegralType(self.scalar_type(), /* includeBool = */ true)) self_vulkan = self.to(c10::kFloat);
+    if (at::isIntegralType(self.scalar_type(), /* includeBool = */ true)) self_vulkan = self.cpu().to(c10::kFloat).to(self.device());
 
     return binary_op_vulkan(self_vulkan, other, 1.0, 3, [](const at::Tensor& a, const at::Scalar& b) { return at::div(a, b); });
 }
@@ -81,8 +81,8 @@ at::Tensor torchvulkan::atan2_vulkan(const at::Tensor& self, const at::Tensor& o
     at::Tensor self_vulkan = self;
     at::Tensor other_vulkan = other;
 
-    if (at::isIntegralType(self.scalar_type(), /* includeBool = */ true)) self_vulkan = self.to(c10::kFloat);
-    if (at::isIntegralType(other.scalar_type(), /* includeBool = */ true)) other_vulkan = other.to(c10::kFloat);
+    if (at::isIntegralType(self.scalar_type(), /* includeBool = */ true)) self_vulkan = self.cpu().to(c10::kFloat).to(self.device());
+    if (at::isIntegralType(other.scalar_type(), /* includeBool = */ true)) other_vulkan = other.cpu().to(c10::kFloat).to(other.device());
 
     return binary_op_vulkan(self_vulkan, other_vulkan, 1.0, 10, [](const at::Tensor& a, const at::Tensor& b) { return at::atan2(a, b); });
 }
