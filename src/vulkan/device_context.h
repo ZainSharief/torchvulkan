@@ -20,6 +20,18 @@ struct DeviceContext {
     std::mutex mutex_;
     bool valid = true;
 
+    bool support_float64 = false;
+    bool support_int64 = false;
+
+    bool support_float32 = false;
+    bool support_int32 = false;
+
+    bool support_float16 = false;
+    bool support_bfloat16 = false;
+    bool support_int16 = false;
+
+    bool support_int8 = false;
+
     VkCommandBuffer getCommandBuffer();
     void flush();
     ~DeviceContext();

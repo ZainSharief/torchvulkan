@@ -1,50 +1,62 @@
-file(GLOB SHADER_SRCS "*.comp")
+file(GLOB SHADER_SRCS CONFIGURE_DEPENDS "*.comp")
 
 set(SHADER_OUT_DIR "${CMAKE_SOURCE_DIR}/build/shaders")
 file(MAKE_DIRECTORY ${SHADER_OUT_DIR})
 
 set(SPV_FILES "")
-set(GLSLC_COMMON_FLAGS -DMAX_DIMS=4)
+set(GLSLC_COMMON_FLAGS -DMAX_DIMS=4 --target-env=vulkan1.4)
 
 foreach(SHADER_SRC ${SHADER_SRCS})
     get_filename_component(SHADER_NAME ${SHADER_SRC} NAME_WE)
 
     # FP64
-    add_custom_command(
-        OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_fp64.spv
+    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_fp64.spv
         COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=float64_t -DVTYPE=dvec2 -DVEC_SIZE=2 -DFLOAT64 -DWG_SIZE=128 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_fp64.spv
-        DEPENDS ${SHADER_SRC}
-        COMMENT "Compiling ${SHADER_NAME} (FP64)"
-    )
+        DEPENDS ${SHADER_SRC})
+
+    # INT64
+    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_int64.spv
+        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=int64_t -DVTYPE=i64vec2 -DVEC_SIZE=2 -DINT64 -DWG_SIZE=128 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_int64.spv
+        DEPENDS ${SHADER_SRC})
 
     # FP32
-    add_custom_command(
-        OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_fp32.spv
-        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=float -DVTYPE=vec4 -DVEC_SIZE=4 -DFLOAT32 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_fp32.spv
-        DEPENDS ${SHADER_SRC}
-        COMMENT "Compiling ${SHADER_NAME} (FP32)"
-    )
+    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_fp32.spv
+        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=float32_t -DVTYPE=vec4 -DVEC_SIZE=4 -DFLOAT32 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_fp32.spv
+        DEPENDS ${SHADER_SRC})
+
+    # INT32
+    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_int32.spv
+        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=int32_t -DVTYPE=ivec4 -DVEC_SIZE=4 -DINT32 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_int32.spv
+        DEPENDS ${SHADER_SRC})
 
     # FP16
-    add_custom_command(
-        OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_fp16.spv
+    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_fp16.spv
         COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=float16_t -DVTYPE=f16vec4 -DVEC_SIZE=4 -DFLOAT16 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_fp16.spv
-        DEPENDS ${SHADER_SRC}
-        COMMENT "Compiling ${SHADER_NAME} (FP16)"
-    )
+        DEPENDS ${SHADER_SRC})
+
+    # BFP16
+    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_bfp16.spv
+        COMMAND ${GLSLC_EXE} -O0 ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=bfloat16_t -DVTYPE=bf16vec4 -DVEC_SIZE=4 -DBFP16 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_bfp16.spv
+        DEPENDS ${SHADER_SRC})
+
+    # INT16
+    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_int16.spv
+        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=int16_t -DVTYPE=i16vec4 -DVEC_SIZE=4 -DINT16 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_int16.spv
+        DEPENDS ${SHADER_SRC})
 
     # INT8
-    add_custom_command(
-        OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_int8.spv
+    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_int8.spv
         COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=int8_t -DVTYPE=i8vec4 -DVEC_SIZE=4 -DINT8 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_int8.spv
-        DEPENDS ${SHADER_SRC}
-        COMMENT "Compiling ${SHADER_NAME} (INT8)"
-    )
+        DEPENDS ${SHADER_SRC})
 
     list(APPEND SPV_FILES 
         ${SHADER_OUT_DIR}/${SHADER_NAME}_fp64.spv
+        ${SHADER_OUT_DIR}/${SHADER_NAME}_int64.spv
         ${SHADER_OUT_DIR}/${SHADER_NAME}_fp32.spv
+        ${SHADER_OUT_DIR}/${SHADER_NAME}_int32.spv
         ${SHADER_OUT_DIR}/${SHADER_NAME}_fp16.spv
+        #${SHADER_OUT_DIR}/${SHADER_NAME}_bfp16.spv
+        ${SHADER_OUT_DIR}/${SHADER_NAME}_int16.spv
         ${SHADER_OUT_DIR}/${SHADER_NAME}_int8.spv
     )
 endforeach()

@@ -5,6 +5,7 @@ find_package(Torch REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
 find_program(GLSLC_EXE glslc REQUIRED)
+find_program(SPIRV_CROSS_EXE spirv-cross REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -33,6 +33,9 @@ private:
     void createDeviceCommandPools();
     void validateDevices();
 
+    void queryVulkanVersion();
+    uint32_t apiVersion, major, minor, patch;
+
     // each device creates a new currentDeviceIndex 
     static thread_local c10::DeviceIndex currentDeviceIndex;
 };

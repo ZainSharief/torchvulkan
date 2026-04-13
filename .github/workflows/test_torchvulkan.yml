@@ -36,13 +36,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y vulkan-tools libvulkan-dev mesa-vulkan-drivers glslc
+          sudo apt-get install -y vulkan-tools libvulkan-dev mesa-vulkan-drivers glslc spirv-cross
           vulkaninfo --summary
 
       - name: Install Vulkan (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install shaderc vulkan-headers vulkan-loader meson ninja bison flex pkg-config llvm glslang libxshmfence
+          brew install shaderc vulkan-headers vulkan-loader meson ninja bison flex pkg-config llvm glslang libxshmfence spirv-cross
           python -m pip install mako pyyaml
           export PATH="$(brew --prefix llvm)/bin:$(brew --prefix bison)/bin:$(brew --prefix flex)/bin:$PATH"
           git clone --depth 1 https://gitlab.freedesktop.org/mesa/mesa.git
