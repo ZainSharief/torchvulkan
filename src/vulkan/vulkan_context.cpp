@@ -67,15 +67,15 @@ void VulkanContext::initVulkan()
     std::vector<const char*> instanceLayers;
 
     #ifdef __APPLE__
-        if (hasExt("VK_KHR_portability_enumeration")) {
-            instanceExtensions.push_back("VK_KHR_portability_enumeration");
-            createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-        }
-        instanceExtensions.push_back("VK_KHR_get_physical_device_properties2"); 
+    if (hasExt("VK_KHR_portability_enumeration")) {
+        instanceExtensions.push_back("VK_KHR_portability_enumeration");
+        createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    }
+    instanceExtensions.push_back("VK_KHR_get_physical_device_properties2"); 
     #endif
 
     #ifndef NDEBUG
-        instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
+    instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
     #endif
 
     createInfo.enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size());
@@ -242,7 +242,9 @@ void VulkanContext::createDeviceWithExtensions()
         deviceExtensions.push_back(VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME);
 
         #ifdef __APPLE__
+        if (hasExt("VK_KHR_portability_subset")) {
             deviceExtensions.push_back("VK_KHR_portability_subset");
+        }
         #endif
 
         for (const char* ext: deviceExtensions) 
