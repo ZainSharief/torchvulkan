@@ -14,10 +14,10 @@ struct BinaryOpSpecializationData {
     int32_t use_scalar;
     int32_t ndim;
 
-    uint32_t pack() const { return (ndim << 5) | (use_scalar << 4) | op_type; }    
-    static constexpr uint32_t numConstants() { return 3; }
-    static constexpr const size_t* sizes() { static constexpr size_t s[] = { sizeof(BinaryOpSpecializationData::op_type), sizeof(BinaryOpSpecializationData::use_scalar), sizeof(BinaryOpSpecializationData::ndim) }; return s; }
-    static constexpr const size_t* offsets() { static constexpr size_t o[] = { offsetof(BinaryOpSpecializationData, op_type), offsetof(BinaryOpSpecializationData, use_scalar), offsetof(BinaryOpSpecializationData, ndim) }; return o; }
+    uint32_t pack() const { return (ndim << 5) | (use_scalar << 4) | op_type; }
+    static const uint32_t numConstants() { return 3; }
+    static const size_t* sizes() { static const size_t s[] = { sizeof(op_type), sizeof(use_scalar), sizeof(ndim) }; return s; }
+    static const size_t* offsets() { static const size_t o[] = { offsetof(BinaryOpSpecializationData, op_type), offsetof(BinaryOpSpecializationData, use_scalar), offsetof(BinaryOpSpecializationData, ndim) }; return o; }
 };
 
 struct BinaryOpPushConstants {
