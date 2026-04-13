@@ -9,6 +9,89 @@
 
 #define MAX_DIMS 4
 
+struct BinaryOpSpecializationData {
+    int32_t op_type; 
+    int32_t use_scalar;
+    int32_t ndim;
+
+    uint32_t pack() const { return (ndim << 5) | (use_scalar << 4) | op_type; }    
+    static constexpr uint32_t numConstants() { return 3; }
+    static constexpr const size_t* sizes() { static constexpr size_t s[] = { sizeof(BinaryOpSpecializationData::op_type), sizeof(BinaryOpSpecializationData::use_scalar), sizeof(BinaryOpSpecializationData::ndim) }; return s; }
+    static constexpr const size_t* offsets() { static constexpr size_t o[] = { offsetof(BinaryOpSpecializationData, op_type), offsetof(BinaryOpSpecializationData, use_scalar), offsetof(BinaryOpSpecializationData, ndim) }; return o; }
+};
+
+struct BinaryOpPushConstants {
+    uint32_t numel;
+    float alpha;
+    float scalar_value;
+    uint32_t sizes[MAX_DIMS];
+    uint32_t strides_a[MAX_DIMS];
+    uint32_t strides_b[MAX_DIMS];
+    float inv_sizes[MAX_DIMS];
+
+    inline void fill_strides(const at::Tensor* self, const at::Tensor* other, const at::Tensor* out, const uint32_t out_dims)
+    {
+        for (uint32_t i = 0; i < out_dims; ++i) {
+            sizes[i] = out->size(i);
+            strides_a[i] = self->stride(i);
+            strides_b[i] = other->stride(i);
+            inv_sizes[i] = 1.0f / out->size(i);
+        }
+
+        for (uint32_t i = out_dims; i < MAX_DIMS; ++i) {
+            sizes[i] = 1;
+            strides_a[i] = 0;
+            strides_b[i] = 0;
+            inv_sizes[i] = 1.0f;
+        }
+    }
+};
+
+inline torchvulkan::ShaderID get_binaryop_shader_id(bool is_contiguous, at::ScalarType dtype, uint32_t* workgroupSizeX) 
+{
+    *workgroupSizeX = dtype == at::kDouble ? 128 : 64;
+
+    if (is_contiguous) {
+        switch (dtype) {
+            case at::kDouble: return torchvulkan::ShaderID::BINARYOP_CONTIG_FP64;
+            case at::kLong: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT64;
+            case at::kUInt64: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT64;
+            
+            case at::kFloat: return torchvulkan::ShaderID::BINARYOP_CONTIG_FP32;
+            case at::kInt: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT32;
+            case at::kUInt32: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT32;
+            
+            case at::kHalf: return torchvulkan::ShaderID::BINARYOP_CONTIG_FP16;
+            case at::kShort: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT16;
+            case at::kUInt16: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT16;
+            
+            case at::kChar: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT8; 
+            case at::kByte: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT8; 
+            case at::kBool: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT8; 
+            default: TORCH_CHECK(false, "torchvulkan [ERROR]: Unsupported scalar type ", c10::toString(dtype), "for binary op.");
+        }
+    } else {
+        switch (dtype) {
+            case at::kDouble: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_FP64;
+            case at::kLong: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT64;
+            case at::kUInt64: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT64;
+            
+            case at::kFloat: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_FP32;
+            case at::kInt: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT32;
+            case at::kUInt32: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT32;
+            
+            case at::kHalf: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_FP16;
+            case at::kShort: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT16;
+            case at::kUInt16: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT16;
+            
+            case at::kChar: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT8; 
+            case at::kByte: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT8; 
+            case at::kBool: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT8; 
+            default: TORCH_CHECK(false, "torchvulkan [ERROR]: Unsupported scalar type ", c10::toString(dtype), "for binary op.");
+        }
+    }
+}
+
 namespace torchvulkan {
 
 template <typename CPUFunc>
@@ -125,86 +208,3 @@ at::Tensor pow_scalar_vulkan(const at::Scalar& self, const at::Tensor& other);
 at::Tensor atan2_vulkan(const at::Tensor& self, const at::Tensor& other);
 
 } // namespace torchvulkan
-
-struct BinaryOpSpecializationData {
-    int32_t op_type; 
-    int32_t use_scalar;
-    int32_t ndim;
-
-    uint32_t pack() const { return (ndim << 5) | (use_scalar << 4) | op_type; }    
-    static constexpr uint32_t numConstants() { return 3; }
-    static constexpr const size_t* sizes() { static constexpr size_t s[] = { sizeof(BinaryOpSpecializationData::op_type), sizeof(BinaryOpSpecializationData::use_scalar), sizeof(BinaryOpSpecializationData::ndim) }; return s; }
-    static constexpr const size_t* offsets() { static constexpr size_t o[] = { offsetof(BinaryOpSpecializationData, op_type), offsetof(BinaryOpSpecializationData, use_scalar), offsetof(BinaryOpSpecializationData, ndim) }; return o; }
-};
-
-struct BinaryOpPushConstants {
-    uint32_t numel;
-    float alpha;
-    float scalar_value;
-    uint32_t sizes[MAX_DIMS];
-    uint32_t strides_a[MAX_DIMS];
-    uint32_t strides_b[MAX_DIMS];
-    float inv_sizes[MAX_DIMS];
-
-    inline void fill_strides(const at::Tensor* self, const at::Tensor* other, const at::Tensor* out, const uint32_t out_dims)
-    {
-        for (uint32_t i = 0; i < out_dims; ++i) {
-            sizes[i] = out->size(i);
-            strides_a[i] = self->stride(i);
-            strides_b[i] = other->stride(i);
-            inv_sizes[i] = 1.0f / out->size(i);
-        }
-
-        for (uint32_t i = out_dims; i < MAX_DIMS; ++i) {
-            sizes[i] = 1;
-            strides_a[i] = 0;
-            strides_b[i] = 0;
-            inv_sizes[i] = 1.0f;
-        }
-    }
-};
-
-inline torchvulkan::ShaderID get_binaryop_shader_id(bool is_contiguous, at::ScalarType dtype, uint32_t* workgroupSizeX) 
-{
-    *workgroupSizeX = dtype == at::kDouble ? 128 : 64;
-
-    if (is_contiguous) {
-        switch (dtype) {
-            case at::kDouble: return torchvulkan::ShaderID::BINARYOP_CONTIG_FP64;
-            case at::kLong: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT64;
-            case at::kUInt64: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT64;
-            
-            case at::kFloat: return torchvulkan::ShaderID::BINARYOP_CONTIG_FP32;
-            case at::kInt: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT32;
-            case at::kUInt32: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT32;
-            
-            case at::kHalf: return torchvulkan::ShaderID::BINARYOP_CONTIG_FP16;
-            case at::kShort: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT16;
-            case at::kUInt16: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT16;
-            
-            case at::kChar: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT8; 
-            case at::kByte: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT8; 
-            case at::kBool: return torchvulkan::ShaderID::BINARYOP_CONTIG_INT8; 
-            default: TORCH_CHECK(false, "torchvulkan [ERROR]: Unsupported scalar type ", c10::toString(dtype), "for binary op.");
-        }
-    } else {
-        switch (dtype) {
-            case at::kDouble: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_FP64;
-            case at::kLong: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT64;
-            case at::kUInt64: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT64;
-            
-            case at::kFloat: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_FP32;
-            case at::kInt: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT32;
-            case at::kUInt32: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT32;
-            
-            case at::kHalf: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_FP16;
-            case at::kShort: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT16;
-            case at::kUInt16: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT16;
-            
-            case at::kChar: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT8; 
-            case at::kByte: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT8; 
-            case at::kBool: return torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT8; 
-            default: TORCH_CHECK(false, "torchvulkan [ERROR]: Unsupported scalar type ", c10::toString(dtype), "for binary op.");
-        }
-    }
-}
