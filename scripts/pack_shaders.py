@@ -1,26 +1,44 @@
 import os
-import re
 import struct
 import glob
 import argparse
 from pathlib import Path
+import subprocess
+import json
 
-def parse_comp_file(filepath: str) -> tuple[int, int]:
-    """Extracts num_bindings and push_constant_size from a .comp file."""
+def parse_spv_file(filepath: str) -> tuple[int, int]:
+    """Extracts num_bindings and push_constant_size from a .spv file."""
     
-    with open(filepath, 'r') as f:
-        code = f.read()
+    result = subprocess.run(
+        ["spirv-cross", filepath, "--reflect"], 
+        capture_output=True, text=True, check=True
+    )
+    
+    reflection = json.loads(result.stdout)
+    
+    num_bindings = 0
+    resource_categories = ["ssbos", "ubos", "sampled_images", "storage_images", "separate_images"]
+    for category in resource_categories:
+        num_bindings += len(reflection.get(category, []))
+        
+    push_constants = reflection.get("push_constants", [])
+    pc_info = push_constants[0]
+    pc_type_id = pc_info["type"]
 
-    bindings = re.findall(r'layout\s*\(\s*binding\s*=\s*\d+\s*\)', code)
-    num_bindings = len(bindings)
+    types = reflection.get("types", {})
+    members = types[pc_type_id].get("members", [])
 
-    pc_match = re.search(r'layout\s*\(\s*push_constant\s*\).*?\{([^}]+)\}', code, re.DOTALL)
-    pc_size = 0
-    if pc_match:
-        struct_body = pc_match.group(1)
-        num_types = len(re.findall(r'\b(uint|int|float)\b', struct_body))
-        pc_size = num_types * 4
+    last_member = max(members, key=lambda m: m["offset"])
+    offset = last_member["offset"]
 
+    last_member_size = 4
+    if "array" in last_member and "array_stride" in last_member:
+        array_length = last_member["array"][0]
+        array_stride = last_member["array_stride"]
+        last_member_size = array_length * array_stride
+
+    pc_size = offset + last_member_size
+        
     return num_bindings, pc_size
 
 def spv_to_c_array(spv_file: str, array_name: str) -> str:
@@ -57,19 +75,13 @@ def main(args):
 
         filename = os.path.basename(spv_path)
         base_name = os.path.splitext(filename)[0]
-        comp_path = os.path.join(args.src, f"{base_name}.comp")
-
-        if not os.path.exists(comp_path):
-            generic_base = base_name.split('_')[0] + '_' + base_name.split('_')[1] 
-            comp_path = os.path.join(args.src, f"{generic_base}.comp")
-            
-        num_bindings, pc_size = parse_comp_file(comp_path)
-        
         enum_name = base_name.upper()
         array_name = f"spv_{base_name}"
-        
+
         enum_entries.append(f"    {enum_name},")
         array_definitions.append(spv_to_c_array(spv_path, array_name))
+
+        num_bindings, pc_size = parse_spv_file(spv_path)
         
         catalog_entries.append(
             f"    {{ ShaderID::{enum_name}, {array_name}, sizeof({array_name}), {pc_size}, {num_bindings} }}, // {enum_name}"
