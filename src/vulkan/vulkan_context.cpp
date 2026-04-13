@@ -176,10 +176,8 @@ void VulkanContext::createDeviceWithExtensions()
         VkPhysicalDeviceShaderAtomicFloatFeaturesEXT supportedAtomicFloat{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT};
         VkPhysicalDeviceShaderIntegerDotProductFeatures supportedDotProduct{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES};
         supportedDotProduct.pNext = &supportedAtomicFloat;
-        VkPhysicalDeviceShaderBfloat16FeaturesKHR supportedBfloat16{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR};
-        supportedAtomicFloat.pNext = &supportedDotProduct;
         VkPhysicalDeviceVulkan12Features supported12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
-        supported12.pNext = &supportedBfloat16;
+        supported12.pNext = &supportedDotProduct;
         VkPhysicalDeviceVulkan11Features supported11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
         supported11.pNext = &supported12;
         VkPhysicalDeviceFeatures2 supportedFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
@@ -201,16 +199,13 @@ void VulkanContext::createDeviceWithExtensions()
         VkPhysicalDeviceShaderIntegerDotProductFeatures enableDotProduct{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES};
         enableDotProduct.shaderIntegerDotProduct = supportedDotProduct.shaderIntegerDotProduct;
         enableDotProduct.pNext = &enableAtomicFloat;
-        VkPhysicalDeviceShaderBfloat16FeaturesKHR enableBfloat16{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR};
-        enableBfloat16.shaderBFloat16Type = supportedBfloat16.shaderBFloat16Type;
-        enableBfloat16.pNext = &enableDotProduct;
         VkPhysicalDeviceVulkan12Features enable12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
         enable12.shaderFloat16 = supported12.shaderFloat16; 
         enable12.shaderInt8 = supported12.shaderInt8;
         enable12.storageBuffer8BitAccess = supported12.storageBuffer8BitAccess;
         enable12.scalarBlockLayout = supported12.scalarBlockLayout;
         enable12.bufferDeviceAddress = supported12.bufferDeviceAddress;
-        enable12.pNext = &enableBfloat16;
+        enable12.pNext = &enableDotProduct;
         VkPhysicalDeviceVulkan11Features enable11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
         enable11.storageBuffer16BitAccess = supported11.storageBuffer16BitAccess;
         enable11.pNext = &enable12;
@@ -224,7 +219,7 @@ void VulkanContext::createDeviceWithExtensions()
         device->support_float64 = supportedFeatures2.features.shaderFloat64;
         device->support_int64 = supportedFeatures2.features.shaderInt64;
         device->support_float16 = supported12.shaderFloat16 && enable11.storageBuffer16BitAccess;
-        device->support_bfloat16 = supportedBfloat16.shaderBFloat16Type && enable11.storageBuffer16BitAccess;
+        device->support_bfloat16 = false; // adding support when it comes out!
         device->support_int16 = supportedFeatures2.features.shaderInt16 && enable11.storageBuffer16BitAccess;
         device->support_int8 = supported12.shaderInt8 && supported12.storageBuffer8BitAccess;
 
@@ -243,6 +238,8 @@ void VulkanContext::createDeviceWithExtensions()
         std::vector<const char*> deviceExtensions;
         deviceExtensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
         deviceExtensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+        deviceExtensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+        deviceExtensions.push_back(VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME);
 
         #ifdef __APPLE__
             deviceExtensions.push_back("VK_KHR_portability_subset");
