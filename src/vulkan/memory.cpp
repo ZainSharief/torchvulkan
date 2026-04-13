@@ -9,7 +9,7 @@ VkResult VulkanBuffer::createBuffer(size_t size, MemoryUsage usage)
     usage_ = usage;
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
+    bufferInfo.size = (size + 127) & ~127; // pad to 128 bytes for safety
     bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | // allow shader read/write this buffer
                        VK_BUFFER_USAGE_TRANSFER_SRC_BIT |   // allow copy from this buffer
                        VK_BUFFER_USAGE_TRANSFER_DST_BIT;    // allow copy to this buffer
