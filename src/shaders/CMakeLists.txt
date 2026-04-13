@@ -4,7 +4,7 @@ set(SHADER_OUT_DIR "${CMAKE_SOURCE_DIR}/build/shaders")
 file(MAKE_DIRECTORY ${SHADER_OUT_DIR})
 
 set(SPV_FILES "")
-set(GLSLC_COMMON_FLAGS -DMAX_DIMS=4 --target-env=vulkan1.4)
+set(GLSLC_COMMON_FLAGS -DMAX_DIMS=4)
 
 foreach(SHADER_SRC ${SHADER_SRCS})
     get_filename_component(SHADER_NAME ${SHADER_SRC} NAME_WE)
