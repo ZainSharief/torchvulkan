@@ -1,0 +1,106 @@
+#version 450
+
+#ifdef FLOAT64
+#extension GL_EXT_shader_explicit_arithmetic_types_float64 : require
+#endif
+#ifdef INT64
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#endif
+#ifdef FLOAT32
+#extension GL_EXT_shader_explicit_arithmetic_types_float32 : require
+#endif
+#ifdef INT32
+#extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
+#endif
+#ifdef FLOAT16
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#endif
+#ifdef BFP16
+#extension GL_EXT_shader_explicit_arithmetic_types_bfloat16 : require
+#endif
+#ifdef INT16
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#endif
+#ifdef INT8
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#endif
+
+#ifdef INT64
+    #define POW_INT int64_t
+#else
+    #define POW_INT int
+#endif
+
+layout(local_size_x = WG_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const int op_type = 0;
+layout(constant_id = 1) const int use_scalar = 0;
+layout(constant_id = 2) const int ndim = MAX_DIMS;
+
+layout(binding = 0) readonly buffer tensor_a { DTYPE a_data[]; };
+layout(binding = 1) readonly buffer tensor_b { DTYPE b_data[]; };
+layout(binding = 2) writeonly buffer tensor_out { DTYPE out_data[]; };
+
+layout(push_constant) uniform parameter
+{
+    uint numel;
+    float alpha;
+    float scalar_value;
+    uint sizes[MAX_DIMS];
+    uint strides_a[MAX_DIMS];
+    uint strides_b[MAX_DIMS];
+    float inv_sizes[MAX_DIMS];
+} p;
+
+void main()
+{
+    int gi = int(gl_GlobalInvocationID.x);
+    if (gi >= p.numel) return;
+
+    uint linear_idx = gi; // keep it as integer to prevent overflow
+    uint idx_a = 0;
+    uint idx_b = 0;
+
+    for (int i = ndim - 1; i >= 0; i--) { // auto unpacked during compilation
+        uint coord = linear_idx % p.sizes[i];
+        linear_idx /= p.sizes[i];
+        idx_a += coord * p.strides_a[i];
+        idx_b += coord * p.strides_b[i];
+    }
+
+    DTYPE v1 = a_data[idx_a];
+    DTYPE v2 = use_scalar == 1 ? DTYPE(p.scalar_value) : b_data[idx_b];
+    
+    DTYPE res;    
+    if (op_type == 0) res = v1 + (DTYPE(p.alpha) * v2);
+    else if (op_type == 1) res = v1 - (DTYPE(p.alpha) * v2);
+    else if (op_type == 2) res = v1 * v2;
+    else if (op_type == 3) res = v1 / v2;
+    else if (op_type == 4) res = max(v1, v2);
+    else if (op_type == 5) res = min(v1, v2);
+    else if (op_type == 7) res = v2 - (DTYPE(p.alpha) * v1);
+    else if (op_type == 8) res = v2 / v1;
+    
+    #ifdef FLOAT64 
+    else if (op_type == 6) res = DTYPE(pow(float(v1), float(v2)));
+    else if (op_type == 9) res = DTYPE(pow(float(v2), float(v1)));
+    else if (op_type == 10) res = DTYPE(atan(float(v1), float(v2)));
+    else if (op_type == 11) res = DTYPE(atan(float(v2), float(v1)));
+    #elif defined(FLOAT32) || defined(FLOAT16) || defined(BFP16)
+    else if (op_type == 6) res = pow(v1, v2);
+    else if (op_type == 9) res = pow(v2, v1);
+    else if (op_type == 10) res = atan(v1, v2);
+    else if (op_type == 11) res = atan(v2, v1);
+    #elif defined(INT64) || defined(INT32) || defined(INT16) || defined(INT8)
+    else if (op_type == 6) {
+        res = DTYPE(1);
+        for (POW_INT val = 0; val < POW_INT(v2); val++) res *= v1; 
+    }
+    else if (op_type == 9) {
+        res = DTYPE(1);
+        for (POW_INT val = 0; val < POW_INT(v1); val++) res *= v2; 
+    }
+    #endif
+
+    out_data[gi] = res;
+}
