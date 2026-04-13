@@ -157,7 +157,7 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, con
     }
     
     at::Tensor self_dtype = self.to(promoted_type);
-    at::Tensor out = at::empty_like(self, self_dtype.options());
+    at::Tensor out = at::empty_like(self, self_dtype.options().memory_format(at::MemoryFormat::Contiguous));
 
     uint32_t numel = out.numel();
     if (numel == 0) return out;

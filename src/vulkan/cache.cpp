@@ -97,8 +97,10 @@ VulkanBuffer* VulkanCache::allocateBuffer(size_t size, MemoryUsage usage)
 
     if (!pools[binIndex].empty()) {
         VulkanBuffer* buffer = pools[binIndex].back();
-        pools[binIndex].pop_back();
-        return buffer;
+        if (buffer->size() > size) {
+            pools[binIndex].pop_back();
+            return buffer;
+        }
     }
 
     size_t nextBin = binIndex + 1;
