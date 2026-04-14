@@ -47,9 +47,12 @@ struct BinaryOpPushConstants {
     }
 };
 
-inline torchvulkan::ShaderID get_binaryop_shader_id(bool is_contiguous, at::ScalarType dtype, uint32_t* workgroupSizeX) 
+inline torchvulkan::ShaderID get_binaryop_shader_id(bool is_contiguous, at::ScalarType dtype, uint32_t& vecSize, uint32_t& workgroupSizeX) 
 {
-    *workgroupSizeX = dtype == at::kDouble ? 128 : 64;
+    size_t size = c10::elementSize(dtype);
+    vecSize = 16 / size;
+    vecSize = vecSize > 4 ? 4 : vecSize; // vulkan does not support vec8, vec16 etc.
+    workgroupSizeX = 1024 / (vecSize * size);
 
     if (is_contiguous) {
         switch (dtype) {
@@ -120,8 +123,8 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, con
 
     uint32_t contiguous = self_expanded.is_contiguous() && other_expanded.is_contiguous();
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t workgroupSizeX;
-    torchvulkan::ShaderID shader_id = get_binaryop_shader_id(contiguous, self_expanded.scalar_type(), &workgroupSizeX);
+    uint32_t vecSize, workgroupSizeX;
+    torchvulkan::ShaderID shader_id = get_binaryop_shader_id(contiguous, self_expanded.scalar_type(), vecSize, workgroupSizeX);
 
     int32_t out_dims = static_cast<int32_t>(out.dim());
     BinaryOpSpecializationData spd = { operation, 0, out_dims };
@@ -131,8 +134,8 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, con
     BinaryOpPushConstants pcs = { numel, alpha.toFloat(), 1.0f };
     if (!contiguous) pcs.fill_strides(&self_expanded, &other_expanded, &out, out_dims);
 
-    uint32_t numel_vec4 = !contiguous || self_expanded.scalar_type() == at::ScalarType::Double ? numel : (numel + 3) / 4; // FIX
-    uint32_t groupX = (numel_vec4 + (workgroupSizeX - 1)) / workgroupSizeX; // FIX
+    uint32_t numel_vec = !contiguous ? numel : (numel + (vecSize - 1)) / vecSize;
+    uint32_t groupX = (numel_vec + (workgroupSizeX - 1)) / workgroupSizeX;
     size_t push_size = contiguous ? (sizeof(uint32_t) + sizeof(float) + sizeof(float)) : sizeof(BinaryOpPushConstants);
 
     shader.dispatch(
@@ -166,8 +169,8 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, con
     
     uint32_t contiguous = self_dtype.is_contiguous();
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t workgroupSizeX;
-    torchvulkan::ShaderID shader_id = get_binaryop_shader_id(contiguous, promoted_type, &workgroupSizeX);
+    uint32_t vecSize, workgroupSizeX;
+    torchvulkan::ShaderID shader_id = get_binaryop_shader_id(contiguous, promoted_type, vecSize, workgroupSizeX);
 
     int32_t out_dims = static_cast<int32_t>(out.dim());
     BinaryOpSpecializationData spd = { operation, 1, out_dims };
@@ -177,8 +180,8 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, con
     BinaryOpPushConstants pcs = { numel, alpha.toFloat(), other.toFloat() };
     if (!contiguous) pcs.fill_strides(&self_dtype, &self_dtype, &out, out_dims);
 
-    uint32_t numel_vec4 = !contiguous || promoted_type == at::ScalarType::Double ? numel : (numel + 3) / 4;
-    uint32_t groupX = (numel_vec4 + (workgroupSizeX - 1)) / workgroupSizeX;
+    uint32_t numel_vec = !contiguous ? numel : (numel + (vecSize-1)) / vecSize;
+    uint32_t groupX = (numel_vec + (workgroupSizeX - 1)) / workgroupSizeX;
     size_t push_size = contiguous ? (sizeof(uint32_t) + sizeof(float) + sizeof(float)) : sizeof(BinaryOpPushConstants);
 
     shader.dispatch(
