@@ -97,8 +97,10 @@ VulkanBuffer* VulkanCache::allocateBuffer(size_t size, MemoryUsage usage)
 
     if (!pools[binIndex].empty()) {
         VulkanBuffer* buffer = pools[binIndex].back();
-        pools[binIndex].pop_back();
-        return buffer;
+        if (buffer->size() >= size) {
+            pools[binIndex].pop_back();
+            return buffer;
+        }
     }
 
     size_t nextBin = binIndex + 1;
@@ -267,6 +269,7 @@ ShaderSubmitInfo* VulkanCache::allocatePipeline(const torchvulkan::Shader shader
 void VulkanCache::softClearCache()
 {
     if (device_ == VK_NULL_HANDLE) return;
+    DeviceContext* ctx = VulkanContext::Instance().CurrentDeviceContext();
 
     for (VkFence fence : fencePool) device_table.vkDestroyFence(device_, fence, nullptr);
     fencePool.clear();
@@ -283,7 +286,10 @@ void VulkanCache::softClearCache()
         stagingBufferPool[i].clear();
     }
 
-    commandBufferPool.clear();
+    if (!commandBufferPool.empty()) {
+        device_table.vkFreeCommandBuffers(device_, ctx->commandPool, static_cast<uint32_t>(commandBufferPool.size()), commandBufferPool.data());
+        commandBufferPool.clear();
+    }
 }
 
 void VulkanCache::clearCache()

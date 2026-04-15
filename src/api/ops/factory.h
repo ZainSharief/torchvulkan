@@ -2,7 +2,7 @@
 #include "vulkan/memory.h"
 #include "vulkan/vulkan_context.h"
 #include "vulkan/allocator.h"
-#include "api/helpers.h"
+#include "helpers.h"
 
 #include <c10/core/MemoryFormat.h>
 

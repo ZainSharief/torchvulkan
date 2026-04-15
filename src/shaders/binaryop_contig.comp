@@ -1,0 +1,125 @@
+#version 450
+
+#ifdef FLOAT64
+#extension GL_EXT_shader_explicit_arithmetic_types_float64 : require
+#endif
+#ifdef INT64
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#endif
+#ifdef FLOAT32
+#extension GL_EXT_shader_explicit_arithmetic_types_float32 : require
+#endif
+#ifdef INT32
+#extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
+#endif
+#ifdef FLOAT16
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#endif
+#ifdef BFP16
+#extension GL_EXT_shader_explicit_arithmetic_types_bfloat16 : require
+#endif
+#ifdef INT16
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#endif
+#ifdef INT8
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#endif
+
+#ifdef INT64
+    #define POW_INT int64_t
+#else
+    #define POW_INT int
+#endif
+
+layout(local_size_x = WG_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const int op_type = 0;
+layout(constant_id = 1) const int use_scalar = 0;
+layout(constant_id = 2) const int ndim = 0; // dummy 
+
+layout(binding = 0) readonly buffer tensor_a { VTYPE a_data[]; };
+layout(binding = 1) readonly buffer tensor_b { VTYPE b_data[]; };
+layout(binding = 2) writeonly buffer tensor_out { VTYPE out_data[]; };
+
+layout(push_constant) uniform parameter
+{
+    uint numel;
+    float alpha;
+    float scalar_value;
+} p;
+
+void main()
+{
+    uint gi = gl_GlobalInvocationID.x;
+    uint base_idx = gi * VEC_SIZE;
+    if (base_idx >= p.numel) return;
+    
+    VTYPE v1 = a_data[gi];
+    VTYPE v2 = use_scalar == 1 ? VTYPE(p.scalar_value) : b_data[gi];
+    
+    VTYPE res;
+    if (op_type == 0) res = v1 + (VTYPE(p.alpha) * v2);
+    else if (op_type == 1) res = v1 - (VTYPE(p.alpha) * v2);
+    else if (op_type == 2) res = v1 * v2;
+    else if (op_type == 3) res = v1 / v2;
+    else if (op_type == 4) res = max(v1, v2);
+    else if (op_type == 5) res = min(v1, v2);
+    else if (op_type == 7) res = v2 - (VTYPE(p.alpha) * v1);
+    else if (op_type == 8) res = v2 / v1;
+    
+    #ifdef FLOAT64 
+    else if (op_type == 6) res = VTYPE(pow(float(v1.x), float(v2.x)), pow(float(v1.y), float(v2.y)));
+    else if (op_type == 9) res = VTYPE(pow(float(v2.x), float(v1.x)), pow(float(v2.y), float(v1.y)));
+    else if (op_type == 10) res = VTYPE(atan(float(v1.x), float(v2.x)), atan(float(v1.y), float(v2.y)));
+    else if (op_type == 11) res = VTYPE(atan(float(v2.x), float(v1.x)), atan(float(v2.y), float(v1.y)));
+    #elif defined(FLOAT32) || defined(FLOAT16) || defined(BFP16)
+    else if (op_type == 6) res = pow(v1, v2);
+    else if (op_type == 9) res = pow(v2, v1);
+    else if (op_type == 10) res = atan(v1, v2);
+    else if (op_type == 11) res = atan(v2, v1);
+    #elif defined(INT64) || defined(INT32) || defined(INT16) || defined(INT8)
+    else if (op_type == 6) {
+        res = VTYPE(DTYPE(1));
+        #if VEC_SIZE >= 1
+        for (POW_INT val = 0; val < POW_INT(v2.x); val++) res.x *= v1.x; 
+        #endif
+        #if VEC_SIZE >= 2
+        for (POW_INT val = 0; val < POW_INT(v2.y); val++) res.y *= v1.y; 
+        #endif
+        #if VEC_SIZE >= 3
+        for (POW_INT val = 0; val < POW_INT(v2.z); val++) res.z *= v1.z; 
+        #endif
+        #if VEC_SIZE == 4
+        for (POW_INT val = 0; val < POW_INT(v2.w); val++) res.w *= v1.w; 
+        #endif
+    }
+    else if (op_type == 9) {
+        res = VTYPE(DTYPE(1));
+        #if VEC_SIZE >= 1
+        for (POW_INT val = 0; val < POW_INT(v1.x); val++) res.x *= v2.x; 
+        #endif
+        #if VEC_SIZE >= 2
+        for (POW_INT val = 0; val < POW_INT(v1.y); val++) res.y *= v2.y; 
+        #endif
+        #if VEC_SIZE >= 3
+        for (POW_INT val = 0; val < POW_INT(v1.z); val++) res.z *= v2.z; 
+        #endif
+        #if VEC_SIZE == 4
+        for (POW_INT val = 0; val < POW_INT(v1.w); val++) res.w *= v2.w; 
+        #endif
+    }
+    #endif
+
+    #if VEC_SIZE > 1
+    int remainder = int(p.numel - base_idx);
+    if (remainder >= VEC_SIZE) {
+        out_data[gi] = res;
+    } else {
+        for (int i = 0; i < remainder; i++) {
+            out_data[gi][i] = res[i];
+        }
+    }
+    #else
+    out_data[gi] = res;
+    #endif
+}

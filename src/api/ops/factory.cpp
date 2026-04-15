@@ -98,7 +98,10 @@ at::Tensor torchvulkan::copy_from_vulkan(
     bool non_blocking) 
 {
     at::Tensor src = self;
-    if (self.scalar_type() != dst.scalar_type()) src = self.to(dst.scalar_type()); 
+    if (self.scalar_type() != dst.scalar_type()) {
+        TORCH_WARN_ONCE("torchvulkan [WARNING]: Data types are not the same. Falling back to CPU for conversion.");
+        src = self.to(at::kCPU).to(dst.scalar_type());
+    }
     
     TORCH_CHECK(src.is_contiguous(), "torchvulkan [ERROR]: Source tensor must be contiguous for copy");
     TORCH_CHECK(dst.is_contiguous(), "torchvulkan [ERROR]: Destination tensor must be contiguous for copy");

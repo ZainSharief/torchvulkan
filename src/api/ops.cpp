@@ -1,5 +1,6 @@
 #include <torch/extension.h>
 #include "api/ops/factory.h"
+#include "api/ops/binary.h"
 
 using namespace torchvulkan;
 
@@ -9,4 +10,33 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("empty_strided", &empty_strided_vulkan);
     m.impl("_copy_from", &copy_from_vulkan);
     m.impl("as_strided", &as_strided_vulkan);
+
+    // binary - Add
+    m.impl("add.Tensor", &add_vulkan);
+    m.impl("add.Scalar", &add_scalar_vulkan);
+
+    // binary - Subtract
+    m.impl("sub.Tensor", &subtract_vulkan);
+    m.impl("sub.Scalar", &subtract_scalar_vulkan);
+    m.impl("rsub.Scalar", &rsub_scalar_vulkan);
+
+    // binary - Multiply
+    m.impl("mul.Tensor", &multiply_vulkan);
+    m.impl("mul.Scalar", &multiply_scalar_vulkan);
+
+    // binary - Divide
+    m.impl("div.Tensor", &divide_vulkan);
+    m.impl("div.Scalar", &divide_scalar_vulkan);
+
+    // binary - Min/Max
+    m.impl("maximum", &maximum_vulkan);
+    m.impl("minimum", &minimum_vulkan);
+
+    // binary - Pow
+    m.impl("pow.Tensor_Tensor", &pow_vulkan);
+    m.impl("pow.Tensor_Scalar", &pow_tensor_scalar_vulkan);
+    m.impl("pow.Scalar", &pow_scalar_vulkan);
+
+    // binary - Atan2
+    m.impl("atan2", &atan2_vulkan);
 }

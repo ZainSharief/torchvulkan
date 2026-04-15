@@ -9,11 +9,14 @@ VkResult VulkanBuffer::createBuffer(size_t size, MemoryUsage usage)
     usage_ = usage;
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
-    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | // allow shader read/write this buffer
-                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT |   // allow copy from this buffer
+    bufferInfo.size = (size + 127) & ~127; // pad to 128 bytes for safety
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT |   // allow copy from this buffer
                        VK_BUFFER_USAGE_TRANSFER_DST_BIT;    // allow copy to this buffer
 
+    if (usage == MemoryUsage::DEVICE_ONLY) {
+        bufferInfo.usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // allow shader read/write this buffer
+    }
+    
     VmaAllocationCreateInfo allocInfo = {};
 
     switch (usage) 
@@ -35,7 +38,7 @@ VkResult VulkanBuffer::createBuffer(size_t size, MemoryUsage usage)
             break;
     }
 
-    VkResult result = vmaCreateBuffer(allocator_, &bufferInfo, &allocInfo, &buffer_, &allocation_, &allocInfo_);    
+    VkResult result = vmaCreateBuffer(allocator_, &bufferInfo, &allocInfo, &buffer_, &allocation_, &allocInfo_);
     if (result == VK_SUCCESS && usage != MemoryUsage::DEVICE_ONLY) mappedData_ = allocInfo_.pMappedData;
     return result;
 }
