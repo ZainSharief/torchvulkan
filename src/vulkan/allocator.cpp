@@ -134,11 +134,13 @@ VulkanBuffer* VulkanAllocator::out_of_memory_buffer(size_t size, MemoryUsage usa
     VulkanBuffer* buffer = device->cache.allocateBuffer(size, usage);
     if (buffer != VK_NULL_HANDLE) return buffer;
 
-    VkResult result;
+    VkResult result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
     if (allocated_bytes.load() < vram_limit.load()) {
         buffer = new VulkanBuffer(device->allocator);
         result = buffer->createBuffer(size, usage);
         if (result == VK_SUCCESS) return buffer;
+        delete buffer;
+        buffer = nullptr;
     }
 
     device->flush();
@@ -147,16 +149,21 @@ VulkanBuffer* VulkanAllocator::out_of_memory_buffer(size_t size, MemoryUsage usa
     sync_memory_budget(0);
     
     if (allocated_bytes.load() < vram_limit.load()) {
+        if (buffer == VK_NULL_HANDLE) buffer = new VulkanBuffer(device->allocator);
         result = buffer->createBuffer(size, usage);
         if (result == VK_SUCCESS) return buffer;
+        delete buffer;
     }
 
-    TORCH_CHECK(false, "torchvulkan [ERROR]: Out of Memory");
+    uint64_t bytes_remaining = vram_limit.load() - (allocated_bytes.load() - size);
+    TORCH_CHECK(false, "torchvulkan [ERROR]: Allocation failed with error code ", result, 
+        ". Tried to allocate ", size, " bytes, but there is only ", bytes_remaining, " bytes remaining");
 }
 
 void VulkanAllocator::sync_memory_budget(size_t size) const 
 {
-    if (num_allocations_since_sync.fetch_add(1, std::memory_order_relaxed) < SYNC_THRESHOLD) return;
+    uint32_t num_allocations = num_allocations_since_sync.fetch_add(1, std::memory_order_relaxed);
+    if (size != 0 && num_allocations < SYNC_THRESHOLD) return;
     
     DeviceContext* device_context = VulkanContext::Instance().CurrentDeviceContext();
     VmaBudget budgets[VK_MAX_MEMORY_HEAPS];

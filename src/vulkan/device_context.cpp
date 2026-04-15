@@ -30,6 +30,8 @@ void DeviceContext::flush()
     std::unique_lock<std::mutex> lock(mutex_);
     device_table.vkQueueSubmit(computeQueue, 1, &submitInfo, fence);
     lock.unlock();
+
+    cache.deleteCommandBuffer(cmd);
     cmd = VK_NULL_HANDLE;
 
     if (device_table.vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
