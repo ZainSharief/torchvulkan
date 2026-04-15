@@ -17,7 +17,7 @@ jobs:
           - name: Linux x86_64
             os: ubuntu-latest
           - name: macOS Apple Silicon
-            os: macos-14
+            os: macos-15
           - name: Windows x86_64
             os: windows-latest
 
@@ -42,32 +42,15 @@ jobs:
       - name: Install Vulkan (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install shaderc vulkan-headers vulkan-loader meson ninja bison flex pkg-config llvm glslang libxshmfence spirv-cross
-          python -m pip install mako pyyaml
-          export PATH="$(brew --prefix llvm)/bin:$(brew --prefix bison)/bin:$(brew --prefix flex)/bin:$PATH"
-          git clone --depth 1 https://gitlab.freedesktop.org/mesa/mesa.git
-          cd mesa
-
-          meson setup build \
-            -Dgallium-drivers=llvmpipe \
-            -Dvulkan-drivers=swrast \
-            -Dplatforms= \
-            -Dglx=disabled \
-            -Degl=disabled \
-            -Dgles1=disabled \
-            -Dgles2=disabled \
-            -Dopengl=false \
-            -Dshared-glapi=disabled \
-            -Dbuildtype=release \
-            --prefix=$PWD/install
-
-          meson compile -C build
-          meson install -C build
-
-          REAL_ICD=$(find $PWD/install -name "*lvp_icd*.json" | head -n 1)
-          echo "VK_ICD_FILENAMES=$REAL_ICD" >> $GITHUB_ENV
-          echo "VK_DRIVER_FILES=$REAL_ICD" >> $GITHUB_ENV
-          echo "DYLD_LIBRARY_PATH=$(brew --prefix)/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+          brew install molten-vk vulkan-tools shaderc ninja glslang libxshmfence spirv-cross
+          MVK_ICD=$(find $(brew --prefix)/share $(brew --prefix)/etc $(brew --prefix molten-vk) -name "MoltenVK_icd.json" 2>/dev/null | head -n 1)          
+          echo "VK_ICD_FILENAMES=$MVK_ICD" >> $GITHUB_ENV
+          echo "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=0" >> $GITHUB_ENV
+          echo "DYLD_LIBRARY_PATH=$(brew --prefix)/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV          
+          export VK_ICD_FILENAMES="$MVK_ICD"
+          export MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=0
+          export DYLD_LIBRARY_PATH="$(brew --prefix)/lib:$DYLD_LIBRARY_PATH"          
+          vulkaninfo --summary
 
       - name: Install Vulkan (Windows)
         if: runner.os == 'Windows'
@@ -93,7 +76,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install pytest setuptools wheel ninja
+          pip install pytest pytest-instafail setuptools wheel ninja
 
       - name: Build TorchVulkan
         run: |
@@ -101,6 +84,7 @@ jobs:
 
       - name: Run Pytest
         env:
+          MVK_CONFIG_LOG_LEVEL: 3
           VK_LOADER_DEBUG: all
         run: |
-          pytest tests/ -v
+          pytest --instafail tests/ -v
