@@ -173,3 +173,17 @@ at::Tensor torchvulkan::as_strided_vulkan(
     
     return result;
 }
+
+at::Tensor torchvulkan::contiguous_vulkan(const at::Tensor& self, at::MemoryFormat memory_format) 
+{
+    if (self.is_contiguous(memory_format)) return self;
+    return self.clone(memory_format);
+}
+
+at::Tensor torchvulkan::clone_vulkan(const at::Tensor& self, c10::optional<at::MemoryFormat> memory_format) 
+{
+    c10::TensorOptions options = self.options();
+    if (memory_format.has_value()) options = options.memory_format(memory_format.value());
+    at::Tensor result = at::empty_like(self, options);
+    return torchvulkan::copy_from_vulkan(self, result, false);
+}

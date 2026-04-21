@@ -10,6 +10,8 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("empty_strided", &empty_strided_vulkan);
     m.impl("_copy_from", &copy_from_vulkan);
     m.impl("as_strided", &as_strided_vulkan);
+    m.impl("contiguous", &contiguous_vulkan);
+    m.impl("clone", &clone_vulkan);
 
     // binary - Add
     m.impl("add.Tensor", &add_vulkan);

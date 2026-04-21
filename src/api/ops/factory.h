@@ -39,4 +39,7 @@ at::Tensor as_strided_vulkan(
     c10::optional<c10::SymInt> storage_offset
 );
 
+at::Tensor contiguous_vulkan(const at::Tensor& self, at::MemoryFormat memory_format);
+at::Tensor clone_vulkan(const at::Tensor& self, c10::optional<at::MemoryFormat> memory_format);
+
 } // namespace torchvulkan
