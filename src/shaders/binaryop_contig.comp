@@ -25,12 +25,6 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
 #endif
 
-#ifdef INT64
-    #define POW_INT int64_t
-#else
-    #define POW_INT int
-#endif
-
 layout(local_size_x = WG_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 layout(constant_id = 0) const int op_type = 0;
@@ -47,6 +41,69 @@ layout(push_constant) uniform parameter
     float alpha;
     float scalar_value;
 } p;
+
+#if defined(INT64) || defined(INT32) || defined(INT16) || defined(INT8)
+DTYPE int_pow(DTYPE base, DTYPE exp) 
+{
+    int e = int(exp);
+    if (e < 0) {
+        if (base == DTYPE(1)) return DTYPE(1);
+        if (int(base) == -1) return (e % 2 != 0) ? DTYPE(-1) : DTYPE(1);
+        return DTYPE(0); 
+    }
+    
+    DTYPE res = DTYPE(1);
+    DTYPE b = base;
+    while (e > 0) {
+        if ((e & 1) != 0) res *= b;
+        b *= b;
+        e >>= 1;
+    }
+    return res;
+}
+#endif
+
+#if defined(FLOAT64) || defined(FLOAT32) || defined(FLOAT16) || defined(BFP16)
+DTYPE safe_pow(DTYPE base, DTYPE exp) 
+{
+    if (exp == DTYPE(0.0)) return DTYPE(1.0);    
+    else if (base == DTYPE(1.0)) return DTYPE(1.0);    
+    else if (isnan(base) || isnan(exp)) return DTYPE(0.0) / DTYPE(0.0);
+    else if (base == DTYPE(0.0)) {
+        if (exp < DTYPE(0.0)) return DTYPE(1.0) / DTYPE(0.0);
+        return DTYPE(0.0);
+    }
+    else if (base > DTYPE(0.0)) {
+        #ifdef FLOAT64
+        return DTYPE(pow(float(base), float(exp)));
+        #else
+        return pow(base, exp);
+        #endif
+    }
+    else if (isinf(exp)) {
+        #ifdef FLOAT64
+        return DTYPE(pow(float(abs(base)), float(exp)));
+        #else
+        return pow(abs(base), exp);
+        #endif
+    }
+    else if (fract(exp) != DTYPE(0.0)) {
+        return DTYPE(0.0) / DTYPE(0.0);
+    }
+    
+    #ifdef FLOAT64
+    DTYPE res = DTYPE(pow(float(abs(base)), float(exp)));
+    #else
+    DTYPE res = pow(abs(base), exp);
+    #endif
+    
+    if (mod(abs(exp), DTYPE(2.0)) == DTYPE(1.0)) {
+        return -res;
+    }
+
+    return res;
+}
+#endif
 
 void main()
 {
@@ -67,59 +124,22 @@ void main()
     else if (op_type == 7) res = v2 - (VTYPE(p.alpha) * v1);
     else if (op_type == 8) res = v2 / v1;
     
-    #ifdef FLOAT64 
-    else if (op_type == 6) res = VTYPE(pow(float(v1.x), float(v2.x)), pow(float(v1.y), float(v2.y)));
-    else if (op_type == 9) res = VTYPE(pow(float(v2.x), float(v1.x)), pow(float(v2.y), float(v1.y)));
+    #if defined(FLOAT64) 
+    else if (op_type == 6) res = VTYPE(safe_pow(float(v1.x), float(v2.x)), safe_pow(float(v1.y), float(v2.y)));
+    else if (op_type == 9) res = VTYPE(safe_pow(float(v2.x), float(v1.x)), safe_pow(float(v2.y), float(v1.y)));
     else if (op_type == 10) res = VTYPE(atan(float(v1.x), float(v2.x)), atan(float(v1.y), float(v2.y)));
     else if (op_type == 11) res = VTYPE(atan(float(v2.x), float(v1.x)), atan(float(v2.y), float(v1.y)));
     #elif defined(FLOAT32) || defined(FLOAT16) || defined(BFP16)
-    else if (op_type == 6) res = pow(v1, v2);
-    else if (op_type == 9) res = pow(v2, v1);
+    else if (op_type == 6) for (int i = 0; i < VEC_SIZE; i++) { res[i] = safe_pow(v1[i], v2[i]); }
+    else if (op_type == 9) for (int i = 0; i < VEC_SIZE; i++) { res[i] = safe_pow(v2[i], v1[i]); }
     else if (op_type == 10) res = atan(v1, v2);
     else if (op_type == 11) res = atan(v2, v1);
     #elif defined(INT64) || defined(INT32) || defined(INT16) || defined(INT8)
-    else if (op_type == 6) {
-        res = VTYPE(DTYPE(1));
-        #if VEC_SIZE >= 1
-        for (POW_INT val = 0; val < POW_INT(v2.x); val++) res.x *= v1.x; 
-        #endif
-        #if VEC_SIZE >= 2
-        for (POW_INT val = 0; val < POW_INT(v2.y); val++) res.y *= v1.y; 
-        #endif
-        #if VEC_SIZE >= 3
-        for (POW_INT val = 0; val < POW_INT(v2.z); val++) res.z *= v1.z; 
-        #endif
-        #if VEC_SIZE == 4
-        for (POW_INT val = 0; val < POW_INT(v2.w); val++) res.w *= v1.w; 
-        #endif
-    }
-    else if (op_type == 9) {
-        res = VTYPE(DTYPE(1));
-        #if VEC_SIZE >= 1
-        for (POW_INT val = 0; val < POW_INT(v1.x); val++) res.x *= v2.x; 
-        #endif
-        #if VEC_SIZE >= 2
-        for (POW_INT val = 0; val < POW_INT(v1.y); val++) res.y *= v2.y; 
-        #endif
-        #if VEC_SIZE >= 3
-        for (POW_INT val = 0; val < POW_INT(v1.z); val++) res.z *= v2.z; 
-        #endif
-        #if VEC_SIZE == 4
-        for (POW_INT val = 0; val < POW_INT(v1.w); val++) res.w *= v2.w; 
-        #endif
-    }
+    else if (op_type == 6) for (int i = 0; i < VEC_SIZE; i++) { res[i] = int_pow(v1[i], v2[i]); }
+    else if (op_type == 9) for (int i = 0; i < VEC_SIZE; i++) { res[i] = int_pow(v2[i], v1[i]); }
     #endif
 
-    #if VEC_SIZE > 1
     int remainder = int(p.numel - base_idx);
-    if (remainder >= VEC_SIZE) {
-        out_data[gi] = res;
-    } else {
-        for (int i = 0; i < remainder; i++) {
-            out_data[gi][i] = res[i];
-        }
-    }
-    #else
-    out_data[gi] = res;
-    #endif
+    if (remainder >= VEC_SIZE) { out_data[gi] = res; } 
+    else { for (int i = 0; i < remainder; i++) { out_data[gi][i] = res[i]; } }
 }
