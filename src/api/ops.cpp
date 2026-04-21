@@ -1,8 +1,18 @@
 #include <torch/extension.h>
+#include <ATen/native/CPUFallback.h>
 #include "api/ops/factory.h"
 #include "api/ops/binary.h"
 
 using namespace torchvulkan;
+
+void vulkan_cpu_fallback_warning(const c10::OperatorHandle& op, torch::jit::Stack* stack) {
+    TORCH_CHECK(false, "torchvulkan [NOT IMPLEMENTED]: Silent fallback detected for operation: ", op.schema().operator_name());
+    at::native::cpu_fallback(op, stack);
+}
+
+TORCH_LIBRARY_IMPL(_, PrivateUse1, m) {
+    m.fallback(torch::CppFunction::makeFromBoxedFunction<&vulkan_cpu_fallback_warning>());
+}
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     // factory
