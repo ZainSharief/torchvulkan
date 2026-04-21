@@ -97,17 +97,16 @@ at::Tensor torchvulkan::copy_from_vulkan(
     const at::Tensor& dst, 
     bool non_blocking) 
 {
+    TORCH_CHECK(self.is_contiguous(), "torchvulkan [NOT IMPLEMENTED]: The following operation has not been implemented: non_contig_copy");
+    TORCH_CHECK(dst.is_contiguous(), "torchvulkan [NOT IMPLEMENTED]: The following operation has not been implemented: non_contig_copy");
+    TORCH_CHECK(self.sizes() == dst.sizes(), "torchvulkan [ERROR]: Copy sizes mismatch");
+
     at::Tensor src = self;
     if (self.scalar_type() != dst.scalar_type()) {
         TORCH_WARN_ONCE("torchvulkan [WARNING]: Data types are not the same. Falling back to CPU for conversion.");
         src = self.to(at::kCPU).to(dst.scalar_type());
     }
     
-    TORCH_CHECK(src.is_contiguous(), "torchvulkan [ERROR]: Source tensor must be contiguous for copy");
-    TORCH_CHECK(dst.is_contiguous(), "torchvulkan [ERROR]: Destination tensor must be contiguous for copy");
-    TORCH_CHECK(src.sizes() == dst.sizes(), "torchvulkan [ERROR]: Copy sizes mismatch");
-    TORCH_CHECK(src.nbytes() == dst.nbytes(), "torchvulkan [ERROR]: Copy byte size mismatch");
-
     c10::DeviceType src_type = src.device().type();
     c10::DeviceType dst_type = dst.device().type();
 
@@ -116,15 +115,20 @@ at::Tensor torchvulkan::copy_from_vulkan(
     } else if (src_type == c10::DeviceType::PrivateUse1) {
         VulkanContext::SetCurrentDevice(src.device().index());
     }
+    
+    void* src_ptr = (void*)src.storage().data_ptr().get_context();
+    uint64_t src_offset = src.storage_offset() * src.itemsize();
+    void* dest_ptr = (void*)dst.storage().data_ptr().get_context();
+    uint64_t dest_offset = dst.storage_offset() * dst.itemsize();
 
     if (src_type == at::kCPU && dst_type == c10::DeviceType::PrivateUse1) { 
-        globalVulkanAllocator.copy_host_to_device(dst.data_ptr(), src.data_ptr(), src.nbytes()); 
+        globalVulkanAllocator.copy_host_to_device(dest_ptr, dest_offset, src.data_ptr(), dst.nbytes());
     } 
     else if (src_type == c10::DeviceType::PrivateUse1 && dst_type == at::kCPU) {
-        globalVulkanAllocator.copy_device_to_host(dst.data_ptr(), src.data_ptr(), src.nbytes()); 
+        globalVulkanAllocator.copy_device_to_host(dst.data_ptr(), src_ptr, src_offset, dst.nbytes());
     } 
     else if (src_type == c10::DeviceType::PrivateUse1 && dst_type == c10::DeviceType::PrivateUse1) {
-        globalVulkanAllocator.copy_device_to_device(dst.data_ptr(), src.data_ptr(), src.nbytes()); 
+        globalVulkanAllocator.copy_device_to_device(dest_ptr, dest_offset, src_ptr, src_offset, dst.nbytes());
     } 
     else {
         at::Tensor cpu_tensor = src.to(at::kCPU);
