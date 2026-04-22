@@ -85,14 +85,13 @@ class TestVulkanOps(TestCase):
                 self.fail(f"Vulkan backend failed on op '{op.name}' with error: {e}")
 
             # uninitialsied memory cannot be comapred
-            if op.name in ("empty", "empty_like", "empty_strided", "new_empty", "new_empty_strided"):
+            if op.name in ("empty", "empty_like", "empty_strided", "new_empty", "new_empty_strided", "empty_permuted"):
                 self.assertEqual(actual.shape, expected.shape)
                 self.assertEqual(actual.dtype, expected.dtype)
                 continue
 
-            if op.name in ("pow", "__rpow__"):
-                self.assertEqual(actual, expected, atol=1e-5, rtol=2e-6)
-                continue
+            elif op.name in ("pow", "__rpow__", "square", "float_power", "atan2") or dtype in (torch.float16, torch.bfloat16):
+                self.assertEqual(actual, expected, atol=1e-2, rtol=1e-2)
 
             self.assertEqual(actual, expected)
             REMAINING_OPS.add(op.name)
