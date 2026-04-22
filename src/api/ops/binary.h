@@ -17,22 +17,26 @@ inline torchvulkan::ShaderID get_binaryop_shader_id(bool is_contiguous, at::Scal
         case at::kDouble: 
             return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_FP64 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_FP64;
         case at::kLong:
-        case at::kUInt64: 
             return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_INT64 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT64;
+        case at::kUInt64: 
+            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_UINT64 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_UINT64;
         case at::kFloat:  
             return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_FP32 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_FP32;
         case at::kInt:
-        case at::kUInt32: 
             return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_INT32 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT32;
+        case at::kUInt32: 
+            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_UINT32 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_UINT32;
         case at::kHalf:   
             return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_FP16 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_FP16;
         case at::kShort:
-        case at::kUInt16: 
             return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_INT16 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT16;
+        case at::kUInt16: 
+            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_UINT16 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_UINT16;
         case at::kChar:   
+            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_INT8 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT8; 
         case at::kByte:   
         case at::kBool:   
-            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_INT8 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT8; 
+            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_UINT8 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_UINT8; 
         default: 
             TORCH_CHECK(false, "torchvulkan [ERROR]: Unsupported scalar type ", c10::toString(dtype), " for binary op.");
     }
