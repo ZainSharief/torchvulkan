@@ -25,10 +25,10 @@ struct VulkanAllocator : public c10::Allocator {
     void clearResources() const;
     static void deleter(void* ptr);
 
-    void copy_data(void* dest, const void* src, std::size_t count) const override; // defaults to host-to-device
-    void copy_host_to_device(void* dest, const void* src, std::size_t count) const;
-    void copy_device_to_host(void* dest, const void* src, std::size_t count) const;
-    void copy_device_to_device(void* dest, const void* src, std::size_t count) const;
+    void copy_data(void* dest, const void* src, std::size_t count) const override; // defaults to device-to-device
+    void copy_host_to_device(void* dest, uint64_t dest_offset, const void* src, std::size_t count) const;
+    void copy_device_to_host(void* dest, const void* src, uint64_t src_offset, std::size_t count) const;
+    void copy_device_to_device(void* dest, uint64_t dest_offset, const void* src, uint64_t src_offset, std::size_t count) const;
 
     VulkanBuffer* out_of_memory_buffer(size_t size, MemoryUsage usage) const;
     void sync_memory_budget(size_t size) const;

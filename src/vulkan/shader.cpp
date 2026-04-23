@@ -30,8 +30,8 @@ void VulkanShader::dispatch(
     c10::SmallVector<VkWriteDescriptorSet, 8> descriptorWrites(tensors.size());
 
     for (size_t i = 0; i < tensors.size(); i++) {
-        VulkanBuffer* vkb = static_cast<VulkanBuffer*>(tensors[i].data_ptr());
-
+        VulkanBuffer* vkb = (VulkanBuffer*)tensors[i].storage().data_ptr().get_context();
+        
         bufferInfos[i].buffer = vkb->buffer();
         bufferInfos[i].offset = tensors[i].storage_offset() * tensors[i].element_size();
         bufferInfos[i].range = VK_WHOLE_SIZE;

@@ -23,12 +23,14 @@ void VulkanAllocator::deleter(void* ptr)
 
 void VulkanAllocator::copy_data(void* dest, const void* src, std::size_t count) const
 {
-    copy_host_to_device(dest, src, count);
+    copy_device_to_device(dest, /* dest_offset = */ 0, src, /* src_offset = */ 0, count);
 }
 
-void VulkanAllocator::copy_host_to_device(void* dest, const void* src, std::size_t count) const
+void VulkanAllocator::copy_host_to_device(void* dest, uint64_t dest_offset, const void* src, std::size_t count) const
 {
     if (count == 0) return;
+    TORCH_CHECK(src != nullptr, "torchvulkan [ERROR]: Source tensor cannot be null.")
+    TORCH_CHECK(dest != nullptr, "torchvulkan [ERROR]: Destination tensor cannot be null.")
     VulkanBuffer* dstBuffer = static_cast<VulkanBuffer*>(dest);
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
 
@@ -40,6 +42,8 @@ void VulkanAllocator::copy_host_to_device(void* dest, const void* src, std::size
     lock.unlock();
 
     VkBufferCopy copyRegion{};
+    copyRegion.dstOffset = dest_offset;
+    copyRegion.srcOffset = 0;
     copyRegion.size = count;
 
     VkCommandBuffer cmd = device->getCommandBuffer();
@@ -67,15 +71,19 @@ void VulkanAllocator::copy_host_to_device(void* dest, const void* src, std::size
     );
 }
 
-void VulkanAllocator::copy_device_to_host(void* dest, const void* src, std::size_t count) const
+void VulkanAllocator::copy_device_to_host(void* dest, const void* src, uint64_t src_offset, std::size_t count) const
 {
     if (count == 0) return;
+    TORCH_CHECK(src != nullptr, "torchvulkan [ERROR]: Source tensor cannot be null.")
+    TORCH_CHECK(dest != nullptr, "torchvulkan [ERROR]: Destination tensor cannot be null.")
     VulkanBuffer* srcBuffer = (VulkanBuffer*)(src);
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
 
     VulkanBuffer* stagingBuffer = out_of_memory_buffer(count, MemoryUsage::DEVICE_TO_HOST);
 
     VkBufferCopy copyRegion{};
+    copyRegion.dstOffset = 0;
+    copyRegion.srcOffset = src_offset;
     copyRegion.size = count;
 
     VkCommandBuffer cmd = device->getCommandBuffer();
@@ -88,14 +96,18 @@ void VulkanAllocator::copy_device_to_host(void* dest, const void* src, std::size
     device->cache.deleteBuffer(stagingBuffer, MemoryUsage::DEVICE_TO_HOST);
 }
 
-void VulkanAllocator::copy_device_to_device(void* dest, const void* src, std::size_t count) const
+void VulkanAllocator::copy_device_to_device(void* dest, uint64_t dest_offset, const void* src, uint64_t src_offset, std::size_t count) const
 {
     if (count == 0) return;
+    TORCH_CHECK(src != nullptr, "torchvulkan [ERROR]: Source tensor cannot be null.")
+    TORCH_CHECK(dest != nullptr, "torchvulkan [ERROR]: Destination tensor cannot be null.")
     VulkanBuffer* dstBuffer = static_cast<VulkanBuffer*>(dest);
     VulkanBuffer* srcBuffer = (VulkanBuffer*)(src);
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
 
     VkBufferCopy copyRegion{};
+    copyRegion.dstOffset = dest_offset;
+    copyRegion.srcOffset = src_offset;
     copyRegion.size = count;
 
     VkCommandBuffer cmd = device->getCommandBuffer();
