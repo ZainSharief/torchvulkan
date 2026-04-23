@@ -110,18 +110,26 @@ void main()
     uint gi = gl_GlobalInvocationID.x;
     uint base_idx = gi * VEC_SIZE;
     if (base_idx >= p.numel) return;
+
+    #if defined(SIGNED_VTYPE)
+        #define SAFE_ALPHA SIGNED_VTYPE(SIGNED_DTYPE(p.alpha))
+        #define SAFE_SCALAR SIGNED_VTYPE(SIGNED_DTYPE(p.scalar_value))
+    #else
+        #define SAFE_ALPHA VTYPE(p.alpha)
+        #define SAFE_SCALAR VTYPE(p.scalar_value)
+    #endif
     
     VTYPE v1 = a_data[gi];
-    VTYPE v2 = use_scalar == 1 ? VTYPE(p.scalar_value) : b_data[gi];
+    VTYPE v2 = use_scalar == 1 ? VTYPE(SAFE_SCALAR) : b_data[gi];
     
     VTYPE res;
-    if (op_type == 0) res = v1 + (VTYPE(p.alpha) * v2);
-    else if (op_type == 1) res = v1 - (VTYPE(p.alpha) * v2);
+    if (op_type == 0) res = v1 + ((SAFE_ALPHA) * v2);
+    else if (op_type == 1) res = v1 - ((SAFE_ALPHA) * v2);
     else if (op_type == 2) res = v1 * v2;
     else if (op_type == 3) res = v1 / v2;
     else if (op_type == 4) res = max(v1, v2);
     else if (op_type == 5) res = min(v1, v2);
-    else if (op_type == 7) res = v2 - (VTYPE(p.alpha) * v1);
+    else if (op_type == 7) res = v2 - ((SAFE_ALPHA) * v1);
     else if (op_type == 8) res = v2 / v1;
     
     #if defined(FLOAT64) 

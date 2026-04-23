@@ -114,6 +114,14 @@ void main()
     int gi = int(gl_GlobalInvocationID.x);
     if (gi >= p.numel) return;
 
+    #if defined(SIGNED_DTYPE)
+        #define SAFE_ALPHA SIGNED_DTYPE(p.alpha)
+        #define SAFE_SCALAR SIGNED_DTYPE(p.scalar_value)
+    #else
+        #define SAFE_ALPHA DTYPE(p.alpha)
+        #define SAFE_SCALAR DTYPE(p.scalar_value)
+    #endif
+
     uint linear_idx = gi; // keep it as integer to prevent overflow
     uint idx_a = 0;
     uint idx_b = 0;
@@ -126,16 +134,16 @@ void main()
     }
 
     DTYPE v1 = a_data[idx_a];
-    DTYPE v2 = use_scalar == 1 ? DTYPE(p.scalar_value) : b_data[idx_b];
+    DTYPE v2 = use_scalar == 1 ? DTYPE(SAFE_SCALAR) : b_data[idx_b];
     
     DTYPE res;    
-    if (op_type == 0) res = v1 + (DTYPE(p.alpha) * v2);
-    else if (op_type == 1) res = v1 - (DTYPE(p.alpha) * v2);
+    if (op_type == 0) res = v1 + (DTYPE(SAFE_ALPHA) * v2);
+    else if (op_type == 1) res = v1 - (DTYPE(SAFE_ALPHA) * v2);
     else if (op_type == 2) res = v1 * v2;
     else if (op_type == 3) res = v1 / v2;
     else if (op_type == 4) res = max(v1, v2);
     else if (op_type == 5) res = min(v1, v2);
-    else if (op_type == 7) res = v2 - (DTYPE(p.alpha) * v1);
+    else if (op_type == 7) res = v2 - (DTYPE(SAFE_ALPHA) * v1);
     else if (op_type == 8) res = v2 / v1;
     
     #ifdef FLOAT64 
