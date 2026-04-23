@@ -105,6 +105,19 @@ DTYPE safe_pow(DTYPE base, DTYPE exp)
 }
 #endif
 
+#if defined(FLOAT64) || defined(FLOAT32) || defined(FLOAT16) || defined(BFP16)
+DTYPE safe_atan2(DTYPE y, DTYPE x) 
+{
+    if (y == DTYPE(0.0) && x == DTYPE(0.0)) return DTYPE(0.0);
+    
+    #ifdef FLOAT64
+    return DTYPE(atan(float(y), float(x)));
+    #else
+    return atan(y, x);
+    #endif
+}
+#endif
+
 void main()
 {
     uint gi = gl_GlobalInvocationID.x;
@@ -132,16 +145,11 @@ void main()
     else if (op_type == 7) res = v2 - ((SAFE_ALPHA) * v1);
     else if (op_type == 8) res = v2 / v1;
     
-    #if defined(FLOAT64) 
-    else if (op_type == 6) res = VTYPE(safe_pow(float(v1.x), float(v2.x)), safe_pow(float(v1.y), float(v2.y)));
-    else if (op_type == 9) res = VTYPE(safe_pow(float(v2.x), float(v1.x)), safe_pow(float(v2.y), float(v1.y)));
-    else if (op_type == 10) res = VTYPE(atan(float(v1.x), float(v2.x)), atan(float(v1.y), float(v2.y)));
-    else if (op_type == 11) res = VTYPE(atan(float(v2.x), float(v1.x)), atan(float(v2.y), float(v1.y)));
-    #elif defined(FLOAT32) || defined(FLOAT16) || defined(BFP16)
+    #if defined(FLOAT64)  || defined(FLOAT32) || defined(FLOAT16) || defined(BFP16)
     else if (op_type == 6) for (int i = 0; i < VEC_SIZE; i++) { res[i] = safe_pow(v1[i], v2[i]); }
     else if (op_type == 9) for (int i = 0; i < VEC_SIZE; i++) { res[i] = safe_pow(v2[i], v1[i]); }
-    else if (op_type == 10) res = atan(v1, v2);
-    else if (op_type == 11) res = atan(v2, v1);
+    else if (op_type == 10) for (int i = 0; i < VEC_SIZE; i++) { res[i] = safe_atan2(v1[i], v2[i]); }
+    else if (op_type == 11) for (int i = 0; i < VEC_SIZE; i++) { res[i] = safe_atan2(v2[i], v1[i]); }
     #elif defined(INT64) || defined(INT32) || defined(INT16) || defined(INT8)
     else if (op_type == 6) for (int i = 0; i < VEC_SIZE; i++) { res[i] = int_pow(v1[i], v2[i]); }
     else if (op_type == 9) for (int i = 0; i < VEC_SIZE; i++) { res[i] = int_pow(v2[i], v1[i]); }
