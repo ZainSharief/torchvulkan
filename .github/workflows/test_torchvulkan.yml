@@ -16,10 +16,13 @@ jobs:
         include:
           - name: Linux x86_64
             os: ubuntu-latest
+            slang_arch: linux-x86_64
           - name: macOS Apple Silicon
             os: macos-15
+            slang_arch: macos-aarch64
           - name: Windows x86_64
             os: windows-latest
+            slang_arch: windows-x86_64
 
     steps:
       - name: Checkout Code
@@ -32,17 +35,25 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Install Slang Compiler
+        shell: bash
+        run: |
+          SLANG_VER="2026.8.1" 
+          curl -L -o slang.zip "https://github.com/shader-slang/slang/releases/download/v${SLANG_VER}/slang-${SLANG_VER}-${{ matrix.slang_arch }}.zip"
+          unzip slang.zip -d slang
+          echo "$PWD/slang/bin" >> $GITHUB_PATH
+
       - name: Install Vulkan (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y vulkan-tools libvulkan-dev mesa-vulkan-drivers glslc spirv-cross
+          sudo apt-get install -y vulkan-tools libvulkan-dev mesa-vulkan-drivers spirv-cross
           vulkaninfo --summary
 
       - name: Install Vulkan (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install molten-vk vulkan-tools shaderc ninja glslang libxshmfence spirv-cross
+          brew install molten-vk vulkan-tools ninja libxshmfence spirv-cross
           MVK_ICD=$(find $(brew --prefix)/share $(brew --prefix)/etc $(brew --prefix molten-vk) -name "MoltenVK_icd.json" 2>/dev/null | head -n 1)          
           echo "VK_ICD_FILENAMES=$MVK_ICD" >> $GITHUB_ENV
           echo "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=0" >> $GITHUB_ENV
