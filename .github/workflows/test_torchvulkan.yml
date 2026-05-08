@@ -35,13 +35,23 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install Slang Compiler
+      - name: Install Slang (macOS & Linux)
+        if: runner.os == 'macOS' || runner.os == 'Linux'
         shell: bash
         run: |
-          SLANG_VER="2026.8.1" 
-          curl -L -o slang.zip "https://github.com/shader-slang/slang/releases/download/v${SLANG_VER}/slang-${SLANG_VER}-${{ matrix.slang_arch }}.zip"
+          SLANG_VERSION="2026.8.1" 
+          curl -L -o slang.zip "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-${{ matrix.slang_arch }}.zip"
           unzip slang.zip -d slang
           echo "$PWD/slang/bin" >> $GITHUB_PATH
+
+      - name: Install Slang (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          SLANG_VERSION="2026.8.1" 
+          $SLANG_ZIP = "slang-${SLANG_VERSION}-win64.zip"          
+          Invoke-WebRequest -Uri "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/${SLANG_ZIP}" -OutFile $SLANG_ZIP          
+          Expand-Archive -Path $SLANG_ZIP -DestinationPath C:\slang          
+          echo "C:\slang\bin" >> $env:GITHUB_PATH
 
       - name: Install Vulkan (Linux)
         if: runner.os == 'Linux'
