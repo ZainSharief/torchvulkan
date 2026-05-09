@@ -87,7 +87,7 @@ inline bool is_dtype_supported(at::ScalarType dtype)
         case at::kUInt32: return device->support_int32;
         
         case at::kHalf: return device->support_float16;
-        case at::kBFloat16: return false; // we cannot support it yet, but when glslc updates we will!
+        case at::kBFloat16: return false; // we cannot support it yet
         case at::kShort: return device->support_int16;
         case at::kUInt16: return device->support_int16;
         
@@ -96,6 +96,56 @@ inline bool is_dtype_supported(at::ScalarType dtype)
         case at::kBool: return device->support_int8; 
         
         default: return false;
+    }
+}
+
+inline int get_dtype_vec_size(at::ScalarType dtype) 
+{
+    switch (dtype) 
+    {
+        case at::kDouble: return 2;
+        case at::kLong: return 2;
+        case at::kUInt64: return 2;
+        
+        case at::kFloat: return 4;
+        case at::kInt: return 4;
+        case at::kUInt32: return 4;
+        
+        case at::kHalf: return 4;
+        case at::kBFloat16: return 4;
+        case at::kShort: return 4;
+        case at::kUInt16: return 4;
+        
+        case at::kChar: return 4; 
+        case at::kByte: return 4; 
+        case at::kBool: return 4; 
+        
+        default: return 0;
+    }
+}
+
+inline int get_dtype_workgroup_size(at::ScalarType dtype) 
+{
+    switch (dtype) 
+    {
+        case at::kDouble: return 64;
+        case at::kLong: return 64;
+        case at::kUInt64: return 64;
+        
+        case at::kFloat: return 64;
+        case at::kInt: return 64;
+        case at::kUInt32: return 64;
+        
+        case at::kHalf: return 128;
+        case at::kBFloat16: return 128;
+        case at::kShort: return 128;
+        case at::kUInt16: return 128;
+        
+        case at::kChar: return 256; 
+        case at::kByte: return 256; 
+        case at::kBool: return 256; 
+        
+        default: return 0;
     }
 }
 
@@ -123,8 +173,7 @@ inline std::vector<int64_t> compute_strides(
 
 inline void fill_strides(
     const at::Tensor& self, const at::Tensor& other, const at::Tensor& out, 
-    uint32_t* sizes, float* inv_sizes,
-    uint32_t* strides_a, uint32_t* strides_b
+    uint32_t* sizes, uint32_t* strides_a, uint32_t* strides_b
 ) {
     uint32_t out_dims = out.dim();
     TORCH_CHECK(out_dims <= MAX_DIMS, "torchvulkan [ERROR]: Output tensor cannot have more than ", MAX_DIMS, " dimensions.");
@@ -133,13 +182,11 @@ inline void fill_strides(
         sizes[i] = out.size(i);
         strides_a[i] = self.stride(i);
         strides_b[i] = other.stride(i);
-        inv_sizes[i] = 1.0f / out.size(i);
     }
 
     for (uint32_t i = out_dims; i < MAX_DIMS; ++i) {
         sizes[i] = 1;
         strides_a[i] = 0;
         strides_b[i] = 0;
-        inv_sizes[i] = 1.0f;
     }
 }

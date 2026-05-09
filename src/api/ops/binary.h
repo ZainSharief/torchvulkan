@@ -7,45 +7,47 @@
 
 #include <c10/core/MemoryFormat.h>
 
-inline torchvulkan::ShaderID get_binaryop_shader_id(bool is_contiguous, at::ScalarType dtype, uint32_t& vecSize, uint32_t& workgroupSizeX) 
-{
-    size_t size = c10::elementSize(dtype);
-    vecSize = std::min(static_cast<uint32_t>(16 / size), static_cast<uint32_t>(MAX_VEC_SIZE)); // Vulkan max is vec4
-    workgroupSizeX = MAX_WORKGROUP_BYTES / (vecSize * size);
+enum class BinaryOp {
+    ADD = 0,
+    SUB = 1,
+    RSUB = 2,
+    MUL = 3,
+    DIV = 4,
+    MAX = 5,
+    MIN = 6,
+    POW = 7,
+    RPOW = 8,
+    ATAN2 = 9
+};
 
-    switch (dtype) {
-        case at::kDouble: 
-            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_FP64 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_FP64;
-        case at::kLong:
-            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_INT64 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT64;
-        case at::kUInt64: 
-            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_UINT64 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_UINT64;
-        case at::kFloat:  
-            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_FP32 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_FP32;
-        case at::kInt:
-            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_INT32 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT32;
-        case at::kUInt32: 
-            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_UINT32 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_UINT32;
-        case at::kHalf:   
-            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_FP16 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_FP16;
-        case at::kShort:
-            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_INT16 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT16;
-        case at::kUInt16: 
-            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_UINT16 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_UINT16;
-        case at::kChar:   
-            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_INT8 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_INT8; 
-        case at::kByte:   
-        case at::kBool:   
-            return is_contiguous ? torchvulkan::ShaderID::BINARYOP_CONTIG_UINT8 : torchvulkan::ShaderID::BINARYOP_NONCONTIG_UINT8; 
-        default: 
-            TORCH_CHECK(false, "torchvulkan [ERROR]: Unsupported scalar type ", c10::toString(dtype), " for binary op.");
+inline torchvulkan::ShaderID get_binaryop_shader_id(at::ScalarType dtype) 
+{
+    switch (dtype) 
+    {
+        case at::kDouble: return torchvulkan::ShaderID::BINARYOP_FLOAT64_T_ENTRYPOINT;
+        case at::kLong: return torchvulkan::ShaderID::BINARYOP_INT64_T_ENTRYPOINT;
+        case at::kUInt64: return torchvulkan::ShaderID::BINARYOP_UINT64_T_ENTRYPOINT;
+        
+        case at::kFloat: return torchvulkan::ShaderID::BINARYOP_FLOAT32_T_ENTRYPOINT;
+        case at::kInt: return torchvulkan::ShaderID::BINARYOP_INT32_T_ENTRYPOINT;
+        case at::kUInt32: return torchvulkan::ShaderID::BINARYOP_UINT32_T_ENTRYPOINT;
+        
+        case at::kHalf: return torchvulkan::ShaderID::BINARYOP_FLOAT16_T_ENTRYPOINT;
+        case at::kShort: return torchvulkan::ShaderID::BINARYOP_INT16_T_ENTRYPOINT;
+        case at::kUInt16: return torchvulkan::ShaderID::BINARYOP_UINT16_T_ENTRYPOINT;
+        
+        case at::kChar: return torchvulkan::ShaderID::BINARYOP_INT8_T_ENTRYPOINT;
+        case at::kByte: return torchvulkan::ShaderID::BINARYOP_UINT8_T_ENTRYPOINT;
+        case at::kBool: return torchvulkan::ShaderID::BINARYOP_UINT8_T_ENTRYPOINT;
+        
+        default: TORCH_CHECK(false, "torchvulkan [ERROR]: Data type ", c10::toString(dtype), " not supported for binary operations.");
     }
-}
+} 
 
 namespace torchvulkan {
 
 template <typename CPUFunc>
-at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, const at::Scalar& alpha, int32_t operation, CPUFunc fallback)
+at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, const at::Scalar& alpha, BinaryOp operation, CPUFunc fallback)
 {    
     c10::ScalarType promoted_type = at::result_type(self, other);
     
@@ -68,34 +70,34 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, con
 
     TORCH_CHECK(out.dim() <= MAX_DIMS, "torchvulkan [ERROR]: Broadcasting supported up to ", MAX_DIMS, " dimensions.");
 
-    uint32_t contiguous = self_expanded.is_contiguous() && other_expanded.is_contiguous();
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t vecSize, workgroupSizeX;
-    torchvulkan::ShaderID shader_id = get_binaryop_shader_id(contiguous, self_expanded.scalar_type(), vecSize, workgroupSizeX);
+    uint32_t vecSize = get_dtype_vec_size(promoted_type);
+    uint32_t contiguous = self_expanded.is_contiguous() && other_expanded.is_contiguous();
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted_type);
+    torchvulkan::ShaderID shader_id = get_binaryop_shader_id(promoted_type);
+    uint32_t op = static_cast<uint32_t>(operation);
 
     int32_t out_dims = static_cast<int32_t>(out.dim());
-    int32_t use_scalar = 0;
     SpecializationBuilder spd{};
-    spd.push(operation)
-       .push(use_scalar)
+    spd.push(op)
+       .push(contiguous)
        .push(out_dims);
-    uint32_t key = (out_dims << 5) | (use_scalar << 4) | operation;
+    uint32_t key = (out_dims << 5) | (contiguous << 4) | op;
     SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
 
-    uint32_t sizes[MAX_DIMS];
-    uint32_t strides_a[MAX_DIMS];
-    uint32_t strides_b[MAX_DIMS];
-    float inv_sizes[MAX_DIMS];
-    if (!contiguous) fill_strides(self_expanded, other_expanded, out, sizes, inv_sizes, strides_a, strides_b);
+    uint32_t sizes[MAX_DIMS] = {0};
+    uint32_t strides_a[MAX_DIMS] = {0};
+    uint32_t strides_b[MAX_DIMS] = {0};
+    if (!contiguous) fill_strides(self_expanded, other_expanded, out, sizes, strides_a, strides_b);
 
     PushConstantBuilder pcs{};
     pcs.push(numel)
        .push(alpha.toFloat())
-       .push(1.0f)
+       .push((float)1.0)
+       .push((int)0)
        .push_array(sizes)
        .push_array(strides_a)
-       .push_array(strides_b)
-       .push_array(inv_sizes);
+       .push_array(strides_b);
     
     uint32_t numel_vec = !contiguous ? numel : (numel + (vecSize - 1)) / vecSize;
     uint32_t groupX = (numel_vec + (workgroupSizeX - 1)) / workgroupSizeX;
@@ -112,7 +114,7 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, con
 }
 
 template <typename CPUFunc>
-at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, const at::Scalar& alpha, int32_t operation, CPUFunc fallback)
+at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, const at::Scalar& alpha, BinaryOp operation, CPUFunc fallback)
 {
     c10::ScalarType promoted_type = at::result_type(self, other);
     
@@ -132,33 +134,34 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, con
     
     uint32_t contiguous = self_dtype.is_contiguous();
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t vecSize, workgroupSizeX;
-    torchvulkan::ShaderID shader_id = get_binaryop_shader_id(contiguous, promoted_type, vecSize, workgroupSizeX);
+    uint32_t vecSize = get_dtype_vec_size(promoted_type);
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted_type);
+    torchvulkan::ShaderID shader_id = get_binaryop_shader_id(promoted_type);
+    uint32_t op = static_cast<uint32_t>(operation);
 
     int32_t out_dims = static_cast<int32_t>(out.dim());
-    int32_t use_scalar = 1;
     SpecializationBuilder spd{};
-    spd.push(operation)
-       .push(use_scalar)
+    spd.push(op)
+       .push(contiguous)
        .push(out_dims);
-    uint32_t key = (out_dims << 5) | (use_scalar << 4) | operation;
+    uint32_t key = (out_dims << 5) | (contiguous << 4) | op;
     SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
 
-    uint32_t sizes[MAX_DIMS];
-    uint32_t strides_a[MAX_DIMS];
-    uint32_t strides_b[MAX_DIMS];
-    float inv_sizes[MAX_DIMS];
-    if (!contiguous) fill_strides(self_dtype, self_dtype, out, sizes, inv_sizes, strides_a, strides_b);
+    uint32_t sizes[MAX_DIMS] = {0};
+    uint32_t strides_a[MAX_DIMS] = {0};
+    uint32_t strides_b[MAX_DIMS] = {0};
+    float inv_sizes[MAX_DIMS] = {0};
+    if (!contiguous) fill_strides(self_dtype, self_dtype, out, sizes, strides_a, strides_b);
 
     PushConstantBuilder pcs{};
     pcs.push(numel)
        .push(alpha.toFloat())
        .push(other.toFloat())
+       .push((int)1)
        .push_array(sizes)
        .push_array(strides_a)
-       .push_array(strides_b)
-       .push_array(inv_sizes);
-    
+       .push_array(strides_b);
+
     uint32_t numel_vec = !contiguous ? numel : (numel + (vecSize-1)) / vecSize;
     uint32_t groupX = (numel_vec + (workgroupSizeX - 1)) / workgroupSizeX;
     

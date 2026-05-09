@@ -1,95 +1,41 @@
-file(GLOB SHADER_SRCS CONFIGURE_DEPENDS "*.comp")
+file(GLOB SHADER_SCRIPTS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/scripts/shaders/*.py")
 
 set(SHADER_OUT_DIR "${CMAKE_SOURCE_DIR}/build/shaders")
 file(MAKE_DIRECTORY ${SHADER_OUT_DIR})
 
-set(SPV_FILES "")
-set(GLSLC_COMMON_FLAGS -DMAX_DIMS=4)
-
-foreach(SHADER_SRC ${SHADER_SRCS})
-    get_filename_component(SHADER_NAME ${SHADER_SRC} NAME_WE)
-
-    # FP64
-    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_fp64.spv
-        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=float64_t -DVTYPE=dvec2 -DVEC_SIZE=2 -DFLOAT64 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_fp64.spv
-        DEPENDS ${SHADER_SRC})
-
-    # INT64
-    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_int64.spv
-        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=int64_t -DVTYPE=i64vec2 -DVEC_SIZE=2 -DINT64 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_int64.spv
-        DEPENDS ${SHADER_SRC})
-
-    # UINT64
-    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_uint64.spv
-        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=uint64_t -DVTYPE=u64vec2 -DVEC_SIZE=2 -DINT64 -DSIGNED_DTYPE=int64_t -DSIGNED_VTYPE=i64vec2 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_uint64.spv
-        DEPENDS ${SHADER_SRC})
-
-    # FP32
-    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_fp32.spv
-        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=float32_t -DVTYPE=vec4 -DVEC_SIZE=4 -DFLOAT32 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_fp32.spv
-        DEPENDS ${SHADER_SRC})
-
-    # INT32
-    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_int32.spv
-        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=int32_t -DVTYPE=ivec4 -DVEC_SIZE=4 -DINT32 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_int32.spv
-        DEPENDS ${SHADER_SRC})
-
-    # UINT32
-    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_uint32.spv
-        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=uint32_t -DVTYPE=u32vec4 -DVEC_SIZE=4 -DINT32 -DSIGNED_DTYPE=int32_t -DSIGNED_VTYPE=ivec4 -DWG_SIZE=64 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_uint32.spv
-        DEPENDS ${SHADER_SRC})
-
-    # FP16
-    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_fp16.spv
-        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=float16_t -DVTYPE=f16vec4 -DVEC_SIZE=4 -DFLOAT16 -DWG_SIZE=128 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_fp16.spv
-        DEPENDS ${SHADER_SRC})
-
-    # BFP16
-    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_bfp16.spv
-        COMMAND ${GLSLC_EXE} -O0 ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=bfloat16_t -DVTYPE=bf16vec4 -DVEC_SIZE=4 -DBFP16 -DWG_SIZE=128 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_bfp16.spv
-        DEPENDS ${SHADER_SRC})
-
-    # INT16
-    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_int16.spv
-        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=int16_t -DVTYPE=i16vec4 -DVEC_SIZE=4 -DINT16 -DWG_SIZE=256 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_int16.spv
-        DEPENDS ${SHADER_SRC})
-
-    # UINT16
-    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_uint16.spv
-        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=uint16_t -DVTYPE=u16vec4 -DVEC_SIZE=4 -DINT16 -DSIGNED_DTYPE=int16_t -DSIGNED_VTYPE=i16vec4 -DWG_SIZE=256 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_uint16.spv
-        DEPENDS ${SHADER_SRC})
-
-    # INT8
-    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_int8.spv
-        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=int8_t -DVTYPE=i8vec4 -DVEC_SIZE=4 -DINT8 -DWG_SIZE=256 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_int8.spv
-        DEPENDS ${SHADER_SRC})
-
-    # UINT8
-    add_custom_command(OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}_uint8.spv
-        COMMAND ${GLSLC_EXE} ${SHADER_SRC} ${GLSLC_COMMON_FLAGS} -DDTYPE=uint8_t -DVTYPE=u8vec4 -DVEC_SIZE=4 -DINT8 -DSIGNED_DTYPE=int8_t -DSIGNED_VTYPE=i8vec4 -DWG_SIZE=256 -o ${SHADER_OUT_DIR}/${SHADER_NAME}_uint8.spv
-        DEPENDS ${SHADER_SRC})
-
-    list(APPEND SPV_FILES 
-        ${SHADER_OUT_DIR}/${SHADER_NAME}_fp64.spv
-        ${SHADER_OUT_DIR}/${SHADER_NAME}_int64.spv
-        ${SHADER_OUT_DIR}/${SHADER_NAME}_uint64.spv
-        ${SHADER_OUT_DIR}/${SHADER_NAME}_fp32.spv
-        ${SHADER_OUT_DIR}/${SHADER_NAME}_int32.spv
-        ${SHADER_OUT_DIR}/${SHADER_NAME}_uint32.spv
-        ${SHADER_OUT_DIR}/${SHADER_NAME}_fp16.spv
-        #${SHADER_OUT_DIR}/${SHADER_NAME}_bfp16.spv
-        ${SHADER_OUT_DIR}/${SHADER_NAME}_int16.spv
-        ${SHADER_OUT_DIR}/${SHADER_NAME}_uint16.spv
-        ${SHADER_OUT_DIR}/${SHADER_NAME}_int8.spv
-        ${SHADER_OUT_DIR}/${SHADER_NAME}_uint8.spv
+foreach (SCRIPT ${SHADER_SCRIPTS})
+    message(STATUS "Running shader generator: ${SCRIPT}")
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} ${SCRIPT}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
 endforeach()
 
-set(SHADER_REGISTRY_H "${CMAKE_CURRENT_SOURCE_DIR}/shader_registry.h")
+file(GLOB GENERATED_SLANG_FILES CONFIGURE_DEPENDS "${SHADER_OUT_DIR}/*.slang")
+file(GLOB BASE_SLANG_FILES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/shaders/*.slang")
+
+set(SPV_FILES "")
+
+foreach(SLANG_FILE ${GENERATED_SLANG_FILES})
+    get_filename_component(SLANG_NAME ${SLANG_FILE} NAME_WE)
+    
+    set(SPV_OUT "${SHADER_OUT_DIR}/${SLANG_NAME}.spv")
+
+    add_custom_command(
+        OUTPUT ${SPV_OUT}
+        COMMAND slangc ${SLANG_FILE} -target spirv -fvk-use-entrypoint-name -I ${CMAKE_SOURCE_DIR}/src/shaders -g -o ${SPV_OUT}
+        DEPENDS ${SLANG_FILE} ${BASE_SLANG_FILES}
+        COMMENT "Compiling generated shader: ${SLANG_NAME}.slang"
+    )
+
+    list(APPEND SPV_FILES ${SPV_OUT})
+endforeach()
+
+set(SHADER_REGISTRY_H "${CMAKE_SOURCE_DIR}/src/shaders/shader_registry.h")
 
 add_custom_command(
     OUTPUT ${SHADER_REGISTRY_H}
-    COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/scripts/pack_shaders.py
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/pack_shaders.py
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     DEPENDS ${SPV_FILES} ${CMAKE_SOURCE_DIR}/scripts/pack_shaders.py
     COMMENT "Packing shaders into ${SHADER_REGISTRY_H}"

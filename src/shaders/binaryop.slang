@@ -1,0 +1,232 @@
+interface IVulkanArithmetic
+{
+    static This ext_pow(This a, This b);
+    static This ext_atan2(This a, This b);
+    static This ext_max(This a, This b);
+    static This ext_min(This a, This b);
+}
+
+#define DEFINE_EXT_POW_ATAN2_FOR_FLOAT_TYPE(type) \
+extension type : IVulkanArithmetic \
+{ \
+    static type _safe_pow(type base, type exp) { \
+        if (sizeof(type) == 8) return type(pow(float(base), float(exp))); \
+        return pow(base, exp); \
+    } \
+    \
+    static type ext_pow(type a, type b) \
+    { \
+        if (b == type(0.0)) return type(1.0); \
+        else if (b == type(1.0)) return a; \
+        else if (b == type(2.0)) return a * a; \
+        else if (a == type(1.0)) return type(1.0); \
+        else if (isnan(a) || isnan(b)) return type(0.0) / type(0.0); \
+        else if (a == type(0.0)) { \
+            if (b < type(0.0)) return type(1.0) / type(0.0); \
+            return type(0.0); \
+        } \
+        else if (a > type(0.0)) { return _safe_pow(a, b); } \
+        else if (isinf(b)) { return _safe_pow(abs(a), b); } \
+        else if (frac(b) != type(0.0)) { return type(0.0) / type(0.0); /* NaN */ } \
+        type res = _safe_pow(abs(a), b); \
+        if (fmod(abs(b), type(2.0)) == type(1.0)) { return -res; } \
+        return res; \
+    } \
+    static type ext_atan2(type a, type b) { return (a == 0 && b == 0) ? 0 : atan2(a, b); } \
+    static type ext_max(type a, type b) { return max(a, b); } \
+    static type ext_min(type a, type b) { return min(a, b); } \
+}
+
+#define DEFINE_EXT_POW_ATAN2_FOR_INT_TYPE(type) \
+extension type : IVulkanArithmetic \
+{ \
+    static type ext_pow(type a, type b) \
+    { \
+        int32_t e = int32_t(b); \
+        if (e < 0) { \
+            if (a == type(1)) return type(1); \
+            if (int(a) == -1) return (e % 2 != 0) ? type(-1) : type(1); \
+            return type(0); \
+        } \
+        type res = type(1); \
+        type a_val = a; \
+        while (e > 0) { \
+            if ((e & 1) != 0) res *= a_val; \
+            a_val *= a_val; \
+            e >>= 1; \
+        } \
+        return res; \
+    } \
+    static type ext_atan2(type a, type b) { return type(0); } \
+    static type ext_max(type a, type b) { return max(a, b); } \
+    static type ext_min(type a, type b) { return min(a, b); } \
+}
+
+extension<T : IVulkanArithmetic, let N : int> vector<T, N> : IVulkanArithmetic
+{
+    static vector<T, N> ext_pow(vector<T, N> a, vector<T, N> b)
+    {
+        vector<T, N> res;
+        [unroll]
+        for (int i = 0; i < N; i++) {
+            res[i] = T.ext_pow(a[i], b[i]);
+        }
+        return res;
+    }
+    static vector<T, N> ext_atan2(vector<T, N> a, vector<T, N> b)
+    {
+        vector<T, N> res;
+        [unroll]
+        for (int i = 0; i < N; i++) {
+            res[i] = T.ext_atan2(a[i], b[i]);
+        }
+        return res;
+    }
+    static vector<T, N> ext_max(vector<T, N> a, vector<T, N> b)
+    {
+        vector<T, N> res;
+        [unroll] for (int i = 0; i < N; i++) res[i] = T.ext_max(a[i], b[i]);
+        return res;
+    }
+    static vector<T, N> ext_min(vector<T, N> a, vector<T, N> b)
+    {
+        vector<T, N> res;
+        [unroll] for (int i = 0; i < N; i++) res[i] = T.ext_min(a[i], b[i]);
+        return res;
+    }
+}
+
+interface IBinaryOp<T>
+{
+    static T eval(T a, T b, T alpha);
+}
+
+struct AddOp<T : IArithmetic> : IBinaryOp<T>
+{
+    static T eval(T a, T b, T alpha) { return a + (alpha * b); }
+}
+
+struct SubOp<T : IArithmetic> : IBinaryOp<T>
+{
+    static T eval(T a, T b, T alpha) { return a - (alpha * b); }
+}
+
+struct RSubOp<T : IArithmetic> : IBinaryOp<T>
+{
+    static T eval(T a, T b, T alpha) { return b - (alpha * a); }
+}
+
+struct MulOp<T : IArithmetic> : IBinaryOp<T>
+{
+    static T eval(T a, T b, T alpha) { return a * b; }
+}
+
+struct DivOp<T : IArithmetic> : IBinaryOp<T>
+{
+    static T eval(T a, T b, T alpha) { return a / b; }
+}
+
+struct PowOp<T : IVulkanArithmetic> : IBinaryOp<T>
+{
+    static T eval(T a, T b, T alpha) { return T.ext_pow(a, b); }
+}
+
+struct RPowOp<T : IVulkanArithmetic> : IBinaryOp<T>
+{
+    static T eval(T a, T b, T alpha) { return T.ext_pow(b, a); }
+}
+
+struct Atan2Op<T : IVulkanArithmetic> : IBinaryOp<T>
+{
+    static T eval(T a, T b, T alpha) { return T.ext_atan2(a, b); }
+}
+
+struct MaxOp<T : IVulkanArithmetic> : IBinaryOp<T>
+{
+    static T eval(T a, T b, T alpha) { return T.ext_max(a, b); }
+}
+
+struct MinOp<T : IVulkanArithmetic> : IBinaryOp<T>
+{
+    static T eval(T a, T b, T alpha) { return T.ext_min(a, b); }
+}
+
+[[vk::constant_id(0)]] const int OP_TYPE = 0;
+[[vk::constant_id(1)]] const bool IS_CONTIG = true;
+[[vk::constant_id(2)]] const int NDIM = 0;
+
+struct PushConstants
+{
+    uint numel;
+    float alpha;
+    float scalar_value;
+    int use_scalar;
+    uint4 sizes;
+    uint4 strides_a;
+    uint4 strides_b;
+};
+[[vk::push_constant]] ConstantBuffer<PushConstants> pcs;
+
+void baseBinaryKernel<
+    T,
+    let VEC_SIZE : int,
+    Op : IBinaryOp<vector<T, VEC_SIZE>>
+>(
+    uint3 gi: SV_DispatchThreadID,
+    StructuredBuffer<vector<T, VEC_SIZE>> tensor_a,
+    StructuredBuffer<vector<T, VEC_SIZE>> tensor_b,
+    RWStructuredBuffer<vector<T, VEC_SIZE>> tensor_out,
+    vector<T, VEC_SIZE> alpha, vector<T, VEC_SIZE> scalar_value // pass them in to avoid intermediate int conversions during casting
+) 
+{
+    uint idx = gi.x;
+    if (idx * VEC_SIZE >= pcs.numel) return;
+
+    vector<T, VEC_SIZE> v1, v2, res;
+    v1 = tensor_a[idx];
+    v2 = pcs.use_scalar == 1 ? scalar_value : tensor_b[idx];
+
+    res = Op.eval(v1, v2, alpha);
+
+    uint remainder = pcs.numel - (idx * VEC_SIZE);
+    if (remainder >= VEC_SIZE) { tensor_out[idx] = res; }
+    else {
+        vector<T, VEC_SIZE> temp = tensor_out[idx];
+        for (uint i = 0; i < remainder; i++) { temp[i] = res[i]; }
+        tensor_out[idx] = temp;
+    }
+}
+
+void baseBinaryKernel<
+    T,
+    let ndim : int,
+    Op : IBinaryOp<T>
+>(
+    uint3 gi: SV_DispatchThreadID,
+    StructuredBuffer<T> tensor_a,
+    StructuredBuffer<T> tensor_b,
+    RWStructuredBuffer<T> tensor_out,
+    T alpha, T scalar_value // pass them in to avoid intermediate int conversions during casting
+)
+{
+    uint idx = gi.x;
+    if (idx >= pcs.numel) return;
+
+    uint idx_a = 0;
+    uint idx_b = 0;
+    uint linear_idx = idx;
+
+    [unroll]
+    for (int i = ndim - 1; i >= 0; i--) {
+        uint coord = linear_idx % pcs.sizes[i];
+        linear_idx /= pcs.sizes[i];
+        idx_a += coord * pcs.strides_a[i];
+        idx_b += coord * pcs.strides_b[i];
+    }
+
+    T v1, v2;
+    v1 = tensor_a[idx_a];
+    v2 = pcs.use_scalar == 1 ? scalar_value : tensor_b[idx_b];
+
+    tensor_out[idx] = Op.eval(v1, v2, alpha);
+}
