@@ -47,8 +47,8 @@ jobs:
       - name: Install Slang (Windows)
         if: runner.os == 'Windows'
         run: |
-          SLANG_VERSION="2026.8.1" 
-          $SLANG_ZIP = "slang-${SLANG_VERSION}-win64.zip"          
+          $SLANG_VERSION = "2026.8.1" 
+          $SLANG_ZIP = "slang-${SLANG_VERSION}-${{ matrix.slang_arch }}.zip"       
           Invoke-WebRequest -Uri "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/${SLANG_ZIP}" -OutFile $SLANG_ZIP          
           Expand-Archive -Path $SLANG_ZIP -DestinationPath C:\slang          
           echo "C:\slang\bin" >> $env:GITHUB_PATH
