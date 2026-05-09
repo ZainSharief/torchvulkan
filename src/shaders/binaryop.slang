@@ -9,23 +9,30 @@ interface IVulkanArithmetic
 #define DEFINE_EXT_POW_ATAN2_FOR_FLOAT_TYPE(type) \
 extension type : IVulkanArithmetic \
 { \
+    static type _safe_pow(type base, type exp) { \
+        if (sizeof(type) == 8) return type(pow(float(base), float(exp))); \
+        return pow(base, exp); \
+    } \
+    \
     static type ext_pow(type a, type b) \
     { \
         if (b == type(0.0)) return type(1.0); \
+        else if (b == type(1.0)) return a; \
+        else if (b == type(2.0)) return a * a; \
         else if (a == type(1.0)) return type(1.0); \
         else if (isnan(a) || isnan(b)) return type(0.0) / type(0.0); \
         else if (a == type(0.0)) { \
             if (b < type(0.0)) return type(1.0) / type(0.0); \
             return type(0.0); \
         } \
-        else if (a > type(0.0)) { return pow(a, b); } \
-        else if (isinf(b)) { return pow(abs(a), b); } \
+        else if (a > type(0.0)) { return _safe_pow(a, b); } \
+        else if (isinf(b)) { return _safe_pow(abs(a), b); } \
         else if (frac(b) != type(0.0)) { return type(0.0) / type(0.0); /* NaN */ } \
-        type res = pow(abs(a), b); \
+        type res = _safe_pow(abs(a), b); \
         if (fmod(abs(b), type(2.0)) == type(1.0)) { return -res; } \
         return res; \
     } \
-    static type ext_atan2(type a, type b) { return atan2(a, b); } \
+    static type ext_atan2(type a, type b) { return (a == 0 && b == 0) ? 0 : atan2(a, b); } \
     static type ext_max(type a, type b) { return max(a, b); } \
     static type ext_min(type a, type b) { return min(a, b); } \
 }
@@ -162,8 +169,8 @@ struct PushConstants
 
 void baseBinaryKernel<
     T,
-    Op : IBinaryOp<vector<T, VEC_SIZE>>,
-    let VEC_SIZE : int
+    let VEC_SIZE : int,
+    Op : IBinaryOp<vector<T, VEC_SIZE>>
 >(
     uint3 gi: SV_DispatchThreadID,
     StructuredBuffer<vector<T, VEC_SIZE>> tensor_a,
@@ -192,8 +199,8 @@ void baseBinaryKernel<
 
 void baseBinaryKernel<
     T,
-    Op : IBinaryOp<T>,
-    let ndim : int
+    let ndim : int,
+    Op : IBinaryOp<T>
 >(
     uint3 gi: SV_DispatchThreadID,
     StructuredBuffer<T> tensor_a,
