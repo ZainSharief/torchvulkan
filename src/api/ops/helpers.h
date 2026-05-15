@@ -72,6 +72,27 @@ private:
     size_t current_size = 0;
 };
 
+struct IntDivider {
+    uint32_t divisor;
+    uint32_t multiplier;
+    uint32_t shift_val;
+    uint32_t pad;
+
+    IntDivider() : divisor(1), multiplier(1), shift_val(0), pad(0) {}
+
+    IntDivider(uint32_t d) 
+        : divisor(d) 
+    {        
+        for (shift_val = 0; shift_val < 32; shift_val++) {
+            if ((1U << shift_val) >= d) break;
+        }
+        
+        uint64_t one = 1;
+        uint64_t magic = ((one << 32) * ((one << shift_val) - d)) / d + 1;
+        multiplier = static_cast<uint32_t>(magic);
+    }
+};
+
 inline bool is_dtype_supported(at::ScalarType dtype) 
 {
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
@@ -169,24 +190,4 @@ inline std::vector<int64_t> compute_strides(
     }
 
     TORCH_CHECK(false, "torchvulkan [ERROR]: Unsupported memory format for sizes.");
-}
-
-inline void fill_strides(
-    const at::Tensor& self, const at::Tensor& other, const at::Tensor& out, 
-    uint32_t* sizes, uint32_t* strides_a, uint32_t* strides_b
-) {
-    uint32_t out_dims = out.dim();
-    TORCH_CHECK(out_dims <= MAX_DIMS, "torchvulkan [ERROR]: Output tensor cannot have more than ", MAX_DIMS, " dimensions.");
-
-    for (uint32_t i = 0; i < out_dims; ++i) {
-        sizes[i] = out.size(i);
-        strides_a[i] = self.stride(i);
-        strides_b[i] = other.stride(i);
-    }
-
-    for (uint32_t i = out_dims; i < MAX_DIMS; ++i) {
-        sizes[i] = 1;
-        strides_a[i] = 0;
-        strides_b[i] = 0;
-    }
 }

@@ -1,3 +1,5 @@
+#include "helpers/int_divider.slang"
+
 interface IVulkanArithmetic
 {
     static This ext_pow(This a, This b);
@@ -161,10 +163,12 @@ struct PushConstants
     float alpha;
     float scalar_value;
     int use_scalar;
-    uint4 sizes;
+    IntDivider sizes[4];
     uint4 strides_a;
     uint4 strides_b;
+    uint4 strides_out;
 };
+
 [[vk::push_constant]] ConstantBuffer<PushConstants> pcs;
 
 void baseBinaryKernel<
@@ -214,19 +218,22 @@ void baseBinaryKernel<
 
     uint idx_a = 0;
     uint idx_b = 0;
+    uint idx_out = 0;
     uint linear_idx = idx;
 
     [unroll]
-    for (int i = ndim - 1; i >= 0; i--) {
-        uint coord = linear_idx % pcs.sizes[i];
-        linear_idx /= pcs.sizes[i];
+    for (int i = 0; i < ndim; i++) {
+        uint next_linear_idx = fast_div(linear_idx, pcs.sizes[i]);
+        uint coord = linear_idx - (next_linear_idx * pcs.sizes[i].divisor);
+        linear_idx = next_linear_idx;
         idx_a += coord * pcs.strides_a[i];
         idx_b += coord * pcs.strides_b[i];
+        idx_out += coord * pcs.strides_out[i];
     }
 
     T v1, v2;
     v1 = tensor_a[idx_a];
     v2 = pcs.use_scalar == 1 ? scalar_value : tensor_b[idx_b];
 
-    tensor_out[idx] = Op.eval(v1, v2, alpha);
+    tensor_out[idx_out] = Op.eval(v1, v2, alpha);
 }

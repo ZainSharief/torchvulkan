@@ -95,10 +95,25 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, con
     uint32_t key = (out_dims << 5) | (contiguous << 4) | op;
     SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
 
-    uint32_t sizes[MAX_DIMS] = {0};
+    IntDivider sizes[MAX_DIMS];
     uint32_t strides_a[MAX_DIMS] = {0};
     uint32_t strides_b[MAX_DIMS] = {0};
-    if (!contiguous) fill_strides(self_dtype, other_dtype, out, sizes, strides_a, strides_b);
+    uint32_t strides_out[MAX_DIMS] = {0};
+    
+    if (!contiguous) {
+        int64_t el_size = iter.element_size(0);
+        at::IntArrayRef iter_shape = iter.shape();
+        at::IntArrayRef iter_strides_out = iter.strides(0);
+        at::IntArrayRef iter_strides_a = iter.strides(1);
+        at::IntArrayRef iter_strides_b = iter.strides(2);
+
+        for (int i = 0; i < out_dims; i++) {
+            sizes[i] = IntDivider(iter_shape[i]);
+            strides_a[i] = iter_strides_a[i] / el_size;
+            strides_b[i] = iter_strides_b[i] / el_size;
+            strides_out[i] = iter_strides_out[i] / el_size;
+        }
+    }
 
     PushConstantBuilder pcs{};
     pcs.push(numel)
@@ -107,7 +122,8 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, con
        .push((int)0)
        .push_array(sizes)
        .push_array(strides_a)
-       .push_array(strides_b);
+       .push_array(strides_b)
+       .push_array(strides_out);
     
     uint32_t numel_vec = !contiguous ? numel : (numel + (vecSize - 1)) / vecSize;
     uint32_t groupX = (numel_vec + (workgroupSizeX - 1)) / workgroupSizeX;
@@ -169,10 +185,23 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, con
     uint32_t key = (out_dims << 5) | (contiguous << 4) | op;
     SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
 
-    uint32_t sizes[MAX_DIMS] = {0};
+    IntDivider sizes[MAX_DIMS];
     uint32_t strides_a[MAX_DIMS] = {0};
     uint32_t strides_b[MAX_DIMS] = {0};
-    if (!contiguous) fill_strides(self_dtype, other_dtype, out, sizes, strides_a, strides_b);
+    uint32_t strides_out[MAX_DIMS] = {0};
+
+    if (!contiguous) {
+        int64_t el_size = iter.element_size(0);
+        at::IntArrayRef iter_shape = iter.shape();
+        at::IntArrayRef iter_strides_out = iter.strides(0);
+        at::IntArrayRef iter_strides_a = iter.strides(1);
+
+        for (int i = 0; i < out_dims; ++i) {
+            sizes[i] = IntDivider(iter_shape[i]);
+            strides_a[i] = iter_strides_a[i] / el_size;
+            strides_out[i] = iter_strides_out[i] / el_size;
+        }
+    }
 
     PushConstantBuilder pcs{};
     pcs.push(numel)
@@ -181,7 +210,8 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, con
        .push((int)1)
        .push_array(sizes)
        .push_array(strides_a)
-       .push_array(strides_b);
+       .push_array(strides_b)
+       .push_array(strides_out);
 
     uint32_t numel_vec = !contiguous ? numel : (numel + (vecSize-1)) / vecSize;
     uint32_t groupX = (numel_vec + (workgroupSizeX - 1)) / workgroupSizeX;
