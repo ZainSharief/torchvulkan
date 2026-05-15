@@ -6,6 +6,7 @@
 #include "helpers.h"
 
 #include <c10/core/MemoryFormat.h>
+#include <ATen/TensorIterator.h>
 
 enum class BinaryOp {
     ADD = 0,
@@ -59,25 +60,34 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, con
     
     at::Tensor self_dtype = self.to(promoted_type);
     at::Tensor other_dtype = other.to(self_dtype.options());
+    at::Tensor out;
 
-    c10::DimVector out_size = at::infer_size_dimvector(self_dtype.sizes(), other_dtype.sizes());
-    at::Tensor self_expanded = self_dtype.expand(out_size);
-    at::Tensor other_expanded = other_dtype.expand(out_size);
-    at::Tensor out = at::empty(out_size, self_expanded.options());
+    at::TensorIterator iter = at::TensorIteratorConfig()
+        .set_check_mem_overlap(true)
+        .add_output(out)
+        .add_input(self_dtype)
+        .add_input(other_dtype)
+        .build();
 
-    uint32_t numel = out.numel();
+    out = iter.output();
+    uint32_t numel = iter.numel();
     if (numel == 0) return out;
 
-    TORCH_CHECK(out.dim() <= MAX_DIMS, "torchvulkan [ERROR]: Broadcasting supported up to ", MAX_DIMS, " dimensions.");
+    int32_t out_dims = static_cast<int32_t>(iter.ndim());
+    if (out_dims > MAX_DIMS) {
+        TORCH_WARN_ONCE("torchvulkan [WARNING]: Coalesced dimensions (", out_dims, ") exceed maximum supported (", MAX_DIMS, "). Falling back to CPU.");
+        at::Tensor out = fallback(self.cpu(), other.cpu());
+        return out.to(self.device());
+    }
 
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
     uint32_t vecSize = get_dtype_vec_size(promoted_type);
-    uint32_t contiguous = self_expanded.is_contiguous() && other_expanded.is_contiguous();
     uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted_type);
+
+    uint32_t contiguous = iter.is_contiguous() ? 1 : 0;
     torchvulkan::ShaderID shader_id = get_binaryop_shader_id(promoted_type);
     uint32_t op = static_cast<uint32_t>(operation);
 
-    int32_t out_dims = static_cast<int32_t>(out.dim());
     SpecializationBuilder spd{};
     spd.push(op)
        .push(contiguous)
@@ -85,10 +95,25 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, con
     uint32_t key = (out_dims << 5) | (contiguous << 4) | op;
     SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
 
-    uint32_t sizes[MAX_DIMS] = {0};
+    IntDivider sizes[MAX_DIMS];
     uint32_t strides_a[MAX_DIMS] = {0};
     uint32_t strides_b[MAX_DIMS] = {0};
-    if (!contiguous) fill_strides(self_expanded, other_expanded, out, sizes, strides_a, strides_b);
+    uint32_t strides_out[MAX_DIMS] = {0};
+    
+    if (!contiguous) {
+        int64_t el_size = iter.element_size(0);
+        at::IntArrayRef iter_shape = iter.shape();
+        at::IntArrayRef iter_strides_out = iter.strides(0);
+        at::IntArrayRef iter_strides_a = iter.strides(1);
+        at::IntArrayRef iter_strides_b = iter.strides(2);
+
+        for (int i = 0; i < out_dims; i++) {
+            sizes[i] = IntDivider(iter_shape[i]);
+            strides_a[i] = iter_strides_a[i] / el_size;
+            strides_b[i] = iter_strides_b[i] / el_size;
+            strides_out[i] = iter_strides_out[i] / el_size;
+        }
+    }
 
     PushConstantBuilder pcs{};
     pcs.push(numel)
@@ -97,7 +122,8 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, con
        .push((int)0)
        .push_array(sizes)
        .push_array(strides_a)
-       .push_array(strides_b);
+       .push_array(strides_b)
+       .push_array(strides_out);
     
     uint32_t numel_vec = !contiguous ? numel : (numel + (vecSize - 1)) / vecSize;
     uint32_t groupX = (numel_vec + (workgroupSizeX - 1)) / workgroupSizeX;
@@ -106,7 +132,7 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, con
     shader.dispatch(
         &pcs, 
         pcs.size(), 
-        {self_expanded, other_expanded, out}, 
+        {self_dtype, other_dtype, out}, 
         groupX, 1, 1
     );
 
@@ -125,21 +151,33 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, con
     }
     
     at::Tensor self_dtype = self.to(promoted_type);
-    at::Tensor out = at::empty_like(self, self_dtype.options().memory_format(at::MemoryFormat::Contiguous));
+    at::Tensor out;
 
-    uint32_t numel = out.numel();
+    at::TensorIterator iter = at::TensorIteratorConfig()
+        .set_check_mem_overlap(true)
+        .add_output(out)
+        .add_input(self_dtype)
+        .build();
+
+    out = iter.output();
+    uint32_t numel = iter.numel();
     if (numel == 0) return out;
 
-    TORCH_CHECK(out.dim() <= MAX_DIMS, "torchvulkan [ERROR]: Broadcasting supported up to ", MAX_DIMS, " dimensions.");
+    int32_t out_dims = static_cast<int32_t>(iter.ndim());
+    if (out_dims > MAX_DIMS) {
+        TORCH_WARN_ONCE("torchvulkan [WARNING]: Coalesced dimensions (", out_dims, ") exceed maximum supported (", MAX_DIMS, "). Falling back to CPU.");
+        at::Tensor out = fallback(self.cpu(), other);
+        return out.to(self.device());
+    }
     
-    uint32_t contiguous = self_dtype.is_contiguous();
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
     uint32_t vecSize = get_dtype_vec_size(promoted_type);
     uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted_type);
+
+    uint32_t contiguous = iter.is_contiguous();
     torchvulkan::ShaderID shader_id = get_binaryop_shader_id(promoted_type);
     uint32_t op = static_cast<uint32_t>(operation);
 
-    int32_t out_dims = static_cast<int32_t>(out.dim());
     SpecializationBuilder spd{};
     spd.push(op)
        .push(contiguous)
@@ -147,11 +185,23 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, con
     uint32_t key = (out_dims << 5) | (contiguous << 4) | op;
     SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
 
-    uint32_t sizes[MAX_DIMS] = {0};
+    IntDivider sizes[MAX_DIMS];
     uint32_t strides_a[MAX_DIMS] = {0};
     uint32_t strides_b[MAX_DIMS] = {0};
-    float inv_sizes[MAX_DIMS] = {0};
-    if (!contiguous) fill_strides(self_dtype, self_dtype, out, sizes, strides_a, strides_b);
+    uint32_t strides_out[MAX_DIMS] = {0};
+
+    if (!contiguous) {
+        int64_t el_size = iter.element_size(0);
+        at::IntArrayRef iter_shape = iter.shape();
+        at::IntArrayRef iter_strides_out = iter.strides(0);
+        at::IntArrayRef iter_strides_a = iter.strides(1);
+
+        for (int i = 0; i < out_dims; ++i) {
+            sizes[i] = IntDivider(iter_shape[i]);
+            strides_a[i] = iter_strides_a[i] / el_size;
+            strides_out[i] = iter_strides_out[i] / el_size;
+        }
+    }
 
     PushConstantBuilder pcs{};
     pcs.push(numel)
@@ -160,7 +210,8 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, con
        .push((int)1)
        .push_array(sizes)
        .push_array(strides_a)
-       .push_array(strides_b);
+       .push_array(strides_b)
+       .push_array(strides_out);
 
     uint32_t numel_vec = !contiguous ? numel : (numel + (vecSize-1)) / vecSize;
     uint32_t groupX = (numel_vec + (workgroupSizeX - 1)) / workgroupSizeX;
