@@ -68,4 +68,59 @@ inline torchvulkan::ShaderID get_copy_shader_id(at::ScalarType dtype)
         default: 
             TORCH_CHECK(false, "torchvulkan [ERROR]: Data type ", c10::toString(dtype), " not supported for copy operations.");
     }
-} 
+}
+
+inline void dispatch_copy_shader(const at::Tensor& src, const at::Tensor& dst) 
+{
+    at::TensorIterator iter = at::TensorIteratorConfig()
+        .set_check_mem_overlap(true)
+        .add_output(dst)
+        .add_input(src)
+        .build();
+
+    uint32_t numel = iter.numel();
+    int32_t out_dims = static_cast<int32_t>(iter.ndim());
+    if (out_dims > MAX_DIMS) {
+        TORCH_CHECK(false, "torchvulkan [WARNING]: Coalesced dimensions (", out_dims, ") exceed maximum supported (", MAX_DIMS, "). Falling back to CPU.");
+    }
+
+    SpecializationBuilder spd{};
+    spd.push(out_dims);
+    uint32_t key = out_dims;
+    SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
+
+    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+    torchvulkan::ShaderID shader_id = get_copy_shader_id(dst.scalar_type());
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(dst.scalar_type());
+
+    IntDivider sizes[MAX_DIMS];
+    uint32_t strides_in[MAX_DIMS] = {0};
+    uint32_t strides_out[MAX_DIMS] = {0};
+    
+    int64_t el_size = iter.element_size(0);
+    at::IntArrayRef iter_shape = iter.shape();
+    at::IntArrayRef iter_strides_out = iter.strides(0);
+    at::IntArrayRef iter_strides_in = iter.strides(1);
+
+    for (int i = 0; i < out_dims; i++) {
+        sizes[i] = IntDivider(iter_shape[i]);
+        strides_in[i] = iter_strides_in[i] / el_size;
+        strides_out[i] = iter_strides_out[i] / el_size;
+    }
+
+    PushConstantBuilder pcs{};
+    pcs.push(numel)
+        .push_array(sizes)
+        .push_array(strides_in)
+        .push_array(strides_out);
+
+    uint32_t groupX = (numel + (workgroupSizeX - 1)) / workgroupSizeX;
+
+    VulkanShader shader(shader_id, specialization, device);
+    shader.dispatch(
+        &pcs, 
+        pcs.size(), 
+        {src, dst}, 
+        groupX, 1, 1
+    );
+}
