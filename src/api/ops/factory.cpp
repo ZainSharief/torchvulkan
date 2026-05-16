@@ -183,15 +183,16 @@ at::Tensor torchvulkan::copy_from_vulkan(
     }
     else if (src_type == c10::DeviceType::PrivateUse1 && dst_type == at::kCPU) 
     {
+        if (!src.is_contiguous()) src = src.contiguous();
+
         void* src_ptr = (void*)src.storage().data_ptr().get_context();
         uint64_t src_offset = src.storage_offset() * src.itemsize();
 
-        if (!src.is_contiguous()) src = src.contiguous();
         if (dst.is_contiguous()) {    
             globalVulkanAllocator.copy_device_to_host(dst.data_ptr(), src_ptr, src_offset, dst.nbytes());
             return dst;
         }
-        
+
         at::Tensor stagingBuffer = at::empty_like(dst, dst.options().memory_format(at::MemoryFormat::Contiguous));
         globalVulkanAllocator.copy_device_to_host(stagingBuffer.data_ptr(), src_ptr, src_offset, stagingBuffer.nbytes());
         dst.copy_(stagingBuffer, non_blocking);
