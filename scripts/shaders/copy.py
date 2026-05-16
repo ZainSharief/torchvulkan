@@ -43,7 +43,7 @@ def generate_entrypoints():
             f.write('void main(uint3 gi: SV_DispatchThreadID) {\n')
 
             for ndim in range(MAX_DIMS+1):
-                f.write(f'   if (NDIM == {ndim}) copyKernel<{dt['dtype']}, {ndim}>(gi, tensor_in, tensor_out);\n')
+                f.write(f'   if (NDIM == {ndim}) copyKernel<{dt["dtype"]}, {ndim}>(gi, tensor_in, tensor_out);\n')
             
             f.write('}')
 
