@@ -97,8 +97,6 @@ at::Tensor torchvulkan::copy_from_vulkan(
     const at::Tensor& dst, 
     bool non_blocking) 
 {
-    TORCH_CHECK(self.is_contiguous(), "torchvulkan [NOT IMPLEMENTED]: The following operation has not been implemented: non_contig_copy");
-    TORCH_CHECK(dst.is_contiguous(), "torchvulkan [NOT IMPLEMENTED]: The following operation has not been implemented: non_contig_copy");
     TORCH_CHECK(self.sizes() == dst.sizes(), "torchvulkan [ERROR]: Copy sizes mismatch");
 
     at::Tensor src = self;
@@ -106,31 +104,163 @@ at::Tensor torchvulkan::copy_from_vulkan(
         TORCH_WARN_ONCE("torchvulkan [WARNING]: Data types are not the same. Falling back to CPU for conversion.");
         src = self.to(at::kCPU).to(dst.scalar_type());
     }
-    
+
     c10::DeviceType src_type = src.device().type();
     c10::DeviceType dst_type = dst.device().type();
 
-    if (dst_type == c10::DeviceType::PrivateUse1) {
-        VulkanContext::SetCurrentDevice(dst.device().index());
-    } else if (src_type == c10::DeviceType::PrivateUse1) {
-        VulkanContext::SetCurrentDevice(src.device().index());
-    }
-    
-    void* src_ptr = (void*)src.storage().data_ptr().get_context();
-    uint64_t src_offset = src.storage_offset() * src.itemsize();
-    void* dest_ptr = (void*)dst.storage().data_ptr().get_context();
-    uint64_t dest_offset = dst.storage_offset() * dst.itemsize();
+    if (dst_type == c10::DeviceType::PrivateUse1) VulkanContext::SetCurrentDevice(dst.device().index());
+    else if (src_type == c10::DeviceType::PrivateUse1) VulkanContext::SetCurrentDevice(src.device().index());
+    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
 
-    if (src_type == at::kCPU && dst_type == c10::DeviceType::PrivateUse1) { 
-        globalVulkanAllocator.copy_host_to_device(dest_ptr, dest_offset, src.data_ptr(), dst.nbytes());
+    if (src_type == at::kCPU && dst_type == c10::DeviceType::PrivateUse1) 
+    {
+        void* dest_ptr = (void*)dst.storage().data_ptr().get_context();
+        uint64_t dest_offset = dst.storage_offset() * dst.itemsize();
+        
+        if (!src.is_contiguous()) src = src.contiguous();
+        if (dst.is_contiguous()) {
+            globalVulkanAllocator.copy_host_to_device(dest_ptr, dest_offset, src.data_ptr(), dst.nbytes());
+            return dst;
+        }
+
+        at::Tensor stagingBuffer = at::empty_like(dst, dst.options().memory_format(at::MemoryFormat::Contiguous));
+        void* staging_buffer_ptr = (void*)stagingBuffer.storage().data_ptr().get_context();
+        uint64_t staging_buffer_offset = stagingBuffer.storage_offset() * dst.itemsize();
+
+        globalVulkanAllocator.copy_host_to_device(staging_buffer_ptr, staging_buffer_offset, src.data_ptr(), dst.nbytes());
+
+        at::TensorIterator iter = at::TensorIteratorConfig()
+            .set_check_mem_overlap(true)
+            .add_output(dst)
+            .add_input(stagingBuffer)
+            .build();
+
+        uint32_t numel = iter.numel();
+        int32_t out_dims = static_cast<int32_t>(iter.ndim());
+        if (out_dims > MAX_DIMS) {
+            TORCH_CHECK(false, "torchvulkan [WARNING]: Coalesced dimensions (", out_dims, ") exceed maximum supported (", MAX_DIMS, "). Falling back to CPU.");
+        }
+
+        SpecializationBuilder spd{};
+        spd.push(out_dims);
+        uint32_t key = out_dims;
+        SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
+
+        DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+        torchvulkan::ShaderID shader_id = get_copy_shader_id(dst.scalar_type());
+        uint32_t workgroupSizeX = get_dtype_workgroup_size(dst.scalar_type());
+
+        IntDivider sizes[MAX_DIMS];
+        uint32_t strides_in[MAX_DIMS] = {0};
+        uint32_t strides_out[MAX_DIMS] = {0};
+        
+        int64_t el_size = iter.element_size(0);
+        at::IntArrayRef iter_shape = iter.shape();
+        at::IntArrayRef iter_strides_out = iter.strides(0);
+        at::IntArrayRef iter_strides_in = iter.strides(1);
+
+        for (int i = 0; i < out_dims; i++) {
+            sizes[i] = IntDivider(iter_shape[i]);
+            strides_in[i] = iter_strides_in[i] / el_size;
+            strides_out[i] = iter_strides_out[i] / el_size;
+        }
+    
+        PushConstantBuilder pcs{};
+        pcs.push(numel)
+           .push_array(sizes)
+           .push_array(strides_in)
+           .push_array(strides_out);
+
+        uint32_t groupX = (numel + (workgroupSizeX - 1)) / workgroupSizeX;
+
+        VulkanShader shader(shader_id, specialization, device);
+        shader.dispatch(
+            &pcs, 
+            pcs.size(), 
+            {stagingBuffer, dst}, 
+            groupX, 1, 1
+        );
+    }
+    else if (src_type == c10::DeviceType::PrivateUse1 && dst_type == at::kCPU) 
+    {
+        void* src_ptr = (void*)src.storage().data_ptr().get_context();
+        uint64_t src_offset = src.storage_offset() * src.itemsize();
+
+        if (!src.is_contiguous()) src = src.contiguous();
+        if (dst.is_contiguous()) {    
+            globalVulkanAllocator.copy_device_to_host(dst.data_ptr(), src_ptr, src_offset, dst.nbytes());
+            return dst;
+        }
+        
+        at::Tensor stagingBuffer = at::empty_like(dst, dst.options().memory_format(at::MemoryFormat::Contiguous));
+        globalVulkanAllocator.copy_device_to_host(stagingBuffer.data_ptr(), src_ptr, src_offset, stagingBuffer.nbytes());
+        dst.copy_(stagingBuffer, non_blocking);
     } 
-    else if (src_type == c10::DeviceType::PrivateUse1 && dst_type == at::kCPU) {
-        globalVulkanAllocator.copy_device_to_host(dst.data_ptr(), src_ptr, src_offset, dst.nbytes());
-    } 
-    else if (src_type == c10::DeviceType::PrivateUse1 && dst_type == c10::DeviceType::PrivateUse1) {
-        globalVulkanAllocator.copy_device_to_device(dest_ptr, dest_offset, src_ptr, src_offset, dst.nbytes());
+    else if (src_type == c10::DeviceType::PrivateUse1 && dst_type == c10::DeviceType::PrivateUse1) 
+    {
+        if (src.is_contiguous() && dst.is_contiguous()) {
+            void* src_ptr = (void*)src.storage().data_ptr().get_context();
+            uint64_t src_offset = src.storage_offset() * src.itemsize();
+            void* dest_ptr = (void*)dst.storage().data_ptr().get_context();
+            uint64_t dest_offset = dst.storage_offset() * dst.itemsize();
+            globalVulkanAllocator.copy_device_to_device(dest_ptr, dest_offset, src_ptr, src_offset, dst.nbytes());
+            return dst;
+        }
+
+        at::TensorIterator iter = at::TensorIteratorConfig()
+            .set_check_mem_overlap(true)
+            .add_output(dst)
+            .add_input(src)
+            .build();
+
+        uint32_t numel = iter.numel();
+        int32_t out_dims = static_cast<int32_t>(iter.ndim());
+        if (out_dims > MAX_DIMS) {
+            TORCH_CHECK(false, "torchvulkan [WARNING]: Coalesced dimensions (", out_dims, ") exceed maximum supported (", MAX_DIMS, "). Falling back to CPU.");
+        }
+
+        SpecializationBuilder spd{};
+        spd.push(out_dims);
+        uint32_t key = out_dims;
+        SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
+
+        DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+        torchvulkan::ShaderID shader_id = get_copy_shader_id(dst.scalar_type());
+        uint32_t workgroupSizeX = get_dtype_workgroup_size(dst.scalar_type());
+
+        IntDivider sizes[MAX_DIMS];
+        uint32_t strides_in[MAX_DIMS] = {0};
+        uint32_t strides_out[MAX_DIMS] = {0};
+        
+        int64_t el_size = iter.element_size(0);
+        at::IntArrayRef iter_shape = iter.shape();
+        at::IntArrayRef iter_strides_out = iter.strides(0);
+        at::IntArrayRef iter_strides_in = iter.strides(1);
+
+        for (int i = 0; i < out_dims; i++) {
+            sizes[i] = IntDivider(iter_shape[i]);
+            strides_in[i] = iter_strides_in[i] / el_size;
+            strides_out[i] = iter_strides_out[i] / el_size;
+        }
+    
+        PushConstantBuilder pcs{};
+        pcs.push(numel)
+           .push_array(sizes)
+           .push_array(strides_in)
+           .push_array(strides_out);
+
+        uint32_t groupX = (numel + (workgroupSizeX - 1)) / workgroupSizeX;
+
+        VulkanShader shader(shader_id, specialization, device);
+        shader.dispatch(
+            &pcs, 
+            pcs.size(), 
+            {src, dst}, 
+            groupX, 1, 1
+        );
     } 
     else {
+        // should never get here, but just in case
         at::Tensor cpu_tensor = src.to(at::kCPU);
         dst.copy_(cpu_tensor, non_blocking);
     }
@@ -174,10 +304,41 @@ at::Tensor torchvulkan::as_strided_vulkan(
     return result;
 }
 
+const at::Tensor& torchvulkan::resize_vulkan(
+    const at::Tensor& self, 
+    c10::IntArrayRef size, 
+    c10::optional<at::MemoryFormat> memory_format) 
+{
+    at::TensorImpl* impl = self.unsafeGetTensorImpl();
+
+    int64_t numel = 1;
+    for (auto s : size) numel *= s;
+    size_t new_bytes = numel * self.itemsize();
+
+    if (impl->storage().nbytes() < new_bytes) {
+        auto new_storage = c10::make_intrusive<c10::StorageImpl>(
+            c10::StorageImpl::use_byte_size_t(),
+            new_bytes,
+            c10::GetAllocator(c10::DeviceType::PrivateUse1),
+            /* resizeable = */ true
+        );
+        impl->set_storage_keep_dtype(std::move(new_storage));
+    }
+
+    at::MemoryFormat format = memory_format.value_or(at::MemoryFormat::Contiguous);
+    std::vector<int64_t> strides = compute_strides(size, format);
+    impl->set_sizes_and_strides(size, strides);
+
+    return self;
+}
+
 at::Tensor torchvulkan::contiguous_vulkan(const at::Tensor& self, at::MemoryFormat memory_format) 
 {
     if (self.is_contiguous(memory_format)) return self;
-    return self.clone(memory_format);
+    at::Tensor result = at::empty_like(self, self.options().memory_format(memory_format));
+
+    // call directly rather than through dispatcher to avoid weird fallbacks that trigger infinite recursive loops
+    return torchvulkan::copy_from_vulkan(self, result, false); 
 }
 
 at::Tensor torchvulkan::clone_vulkan(const at::Tensor& self, c10::optional<at::MemoryFormat> memory_format) 
@@ -185,5 +346,7 @@ at::Tensor torchvulkan::clone_vulkan(const at::Tensor& self, c10::optional<at::M
     c10::TensorOptions options = self.options();
     if (memory_format.has_value()) options = options.memory_format(memory_format.value());
     at::Tensor result = at::empty_like(self, options);
+
+    // call directly rather than through dispatcher to avoid weird fallbacks that trigger infinite recursive loops
     return torchvulkan::copy_from_vulkan(self, result, false);
 }

@@ -39,7 +39,42 @@ at::Tensor as_strided_vulkan(
     c10::optional<c10::SymInt> storage_offset
 );
 
+const at::Tensor& resize_vulkan(
+    const at::Tensor& self, 
+    c10::IntArrayRef size, 
+    c10::optional<at::MemoryFormat> memory_format
+);
+
 at::Tensor contiguous_vulkan(const at::Tensor& self, at::MemoryFormat memory_format);
 at::Tensor clone_vulkan(const at::Tensor& self, c10::optional<at::MemoryFormat> memory_format);
 
 } // namespace torchvulkan
+
+inline torchvulkan::ShaderID get_copy_shader_id(at::ScalarType dtype) 
+{
+    switch (dtype) 
+    {
+        case at::kDouble:
+        case at::kLong:
+        case at::kUInt64: 
+            return torchvulkan::ShaderID::COPY_UINT64_T_ENTRYPOINT;
+        
+        case at::kFloat:
+        case at::kInt:
+        case at::kUInt32: 
+            return torchvulkan::ShaderID::COPY_UINT32_T_ENTRYPOINT;
+        
+        case at::kHalf:
+        case at::kBFloat16: 
+        case at::kShort: 
+        case at::kUInt16: 
+            return torchvulkan::ShaderID::COPY_UINT16_T_ENTRYPOINT;
+        
+        case at::kChar:
+        case at::kByte:
+        case at::kBool: 
+            return torchvulkan::ShaderID::COPY_UINT8_T_ENTRYPOINT;
+        
+        default: TORCH_CHECK(false, "torchvulkan [ERROR]: Data type ", c10::toString(dtype), " not supported for copy operations.");
+    }
+} 
