@@ -52,29 +52,20 @@ at::Tensor clone_vulkan(const at::Tensor& self, c10::optional<at::MemoryFormat> 
 
 inline torchvulkan::ShaderID get_copy_shader_id(at::ScalarType dtype) 
 {
-    switch (dtype) 
+    size_t bytes = c10::elementSize(dtype);
+    switch (bytes) 
     {
-        case at::kDouble:
-        case at::kLong:
-        case at::kUInt64: 
-            return torchvulkan::ShaderID::COPY_UINT64_T_ENTRYPOINT;
-        
-        case at::kFloat:
-        case at::kInt:
-        case at::kUInt32: 
-            return torchvulkan::ShaderID::COPY_UINT32_T_ENTRYPOINT;
-        
-        case at::kHalf:
-        case at::kBFloat16: 
-        case at::kShort: 
-        case at::kUInt16: 
-            return torchvulkan::ShaderID::COPY_UINT16_T_ENTRYPOINT;
-        
-        case at::kChar:
-        case at::kByte:
-        case at::kBool: 
-            return torchvulkan::ShaderID::COPY_UINT8_T_ENTRYPOINT;
-        
-        default: TORCH_CHECK(false, "torchvulkan [ERROR]: Data type ", c10::toString(dtype), " not supported for copy operations.");
+        case 16:
+            return torchvulkan::ShaderID::COPY_16_ENTRYPOINT;
+        case 8: 
+            return torchvulkan::ShaderID::COPY_8_ENTRYPOINT;
+        case 4: 
+            return torchvulkan::ShaderID::COPY_4_ENTRYPOINT;
+        case 2: 
+            return torchvulkan::ShaderID::COPY_2_ENTRYPOINT;
+        case 1: 
+            return torchvulkan::ShaderID::COPY_1_ENTRYPOINT;
+        default: 
+            TORCH_CHECK(false, "torchvulkan [ERROR]: Data type ", c10::toString(dtype), " not supported for copy operations.");
     }
 } 
