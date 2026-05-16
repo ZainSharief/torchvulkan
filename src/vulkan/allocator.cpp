@@ -96,6 +96,20 @@ void VulkanAllocator::copy_device_to_host(void* dest, const void* src, uint64_t 
     device->cache.deleteBuffer(stagingBuffer, MemoryUsage::DEVICE_TO_HOST);
 }
 
+void VulkanAllocator::copy_device_to_host(void* dest, VulkanBuffer* stagingBuffer, std::size_t count) const
+{
+    if (count == 0) return;
+    TORCH_CHECK(stagingBuffer != nullptr, "torchvulkan [ERROR]: Source tensor cannot be null.")
+    TORCH_CHECK(dest != nullptr, "torchvulkan [ERROR]: Destination tensor cannot be null.")
+    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+
+    device->flush();
+    clearResources();
+    stagingBuffer->invalidate();
+    memcpy(dest, stagingBuffer->data(), count);
+    device->cache.deleteBuffer(stagingBuffer, MemoryUsage::DEVICE_TO_HOST);
+}
+
 void VulkanAllocator::copy_device_to_device(void* dest, uint64_t dest_offset, const void* src, uint64_t src_offset, std::size_t count) const
 {
     if (count == 0) return;
@@ -135,10 +149,6 @@ void VulkanAllocator::copy_device_to_device(void* dest, uint64_t dest_offset, co
     );
 }
 
-/*
-If the allocator fails to find available memory, we flush the queue
-and then clear resources to make space in memory before trying again.
-*/
 VulkanBuffer* VulkanAllocator::out_of_memory_buffer(size_t size, MemoryUsage usage) const
 {
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
