@@ -1,4 +1,4 @@
-#include "helpers/int_divider.slang"
+#include "helpers/int_divider.slang.j2"
 
 interface IVulkanArithmetic
 {
@@ -156,6 +156,7 @@ struct MinOp<T : IVulkanArithmetic> : IBinaryOp<T>
 [[vk::constant_id(0)]] const int OP_TYPE = 0;
 [[vk::constant_id(1)]] const bool IS_CONTIG = true;
 [[vk::constant_id(2)]] const int NDIM = 0;
+[[vk::constant_id(3)]] const int WG_x = 0;
 
 struct PushConstants
 {
@@ -236,4 +237,37 @@ void baseBinaryKernel<
     v2 = pcs.use_scalar == 1 ? scalar_value : tensor_b[idx_b];
 
     tensor_out[idx_out] = Op.eval(v1, v2, alpha);
+}
+
+{% if d1 in ['float64_t', 'float32_t', 'float16_t'] %}
+DEFINE_EXT_POW_ATAN2_FOR_FLOAT_TYPE({{ d1 }})
+{% else %}
+DEFINE_EXT_POW_ATAN2_FOR_INT_TYPE({{ d1 }})
+{% endif %}
+
+[[vk::binding(0, 0)]] StructuredBuffer<vector<{{ d1 }}, {{ v1 }}>> tensor_a_contig;
+[[vk::binding(1, 0)]] StructuredBuffer<vector<{{ d1 }}, {{ v1 }}>> tensor_b_contig;
+[[vk::binding(2, 0)]] RWStructuredBuffer<vector<{{ d1 }}, {{ v1 }}>> tensor_out_contig;
+
+[[vk::binding(0, 0)]] StructuredBuffer<{{ d1 }}> tensor_a_noncontig;
+[[vk::binding(1, 0)]] StructuredBuffer<{{ d1 }}> tensor_b_noncontig;
+[[vk::binding(2, 0)]] RWStructuredBuffer<{{ d1 }}> tensor_out_noncontig;
+
+[shader("compute")]
+[numthreads(WG_x, 1, 1)]
+void main(uint3 gi: SV_DispatchThreadID) {
+
+    {% for is_contig in [true, false] %}
+    {% for op in OPERATIONS %}
+
+    {% if is_contig %}
+    if (IS_CONTIG && OP_TYPE == {{ op['name'] }}) baseBinaryKernel<{{ d1 }}, {{ v1 }}, {{ op['struct'] }}<vector<{{ d1 }}, {{ v1 }}>>>(gi, tensor_a_contig, tensor_b_contig, tensor_out_contig, {% if d1[0] == 'u' %} ({{ d1 }})({{ d1[1:] }}) {% else %} ({{ d1 }}) {% endif %}pcs.alpha, {% if d1[0] == 'u' %} ({{ d1 }})({{ d1[1:] }}) {% else %} ({{ d1 }}) {% endif %}pcs.scalar_value);
+    {% else %}
+    {% for dim in range(MAX_DIMS+1) %}
+    if (!IS_CONTIG && OP_TYPE == {{ op['name'] }} && NDIM == {{ dim }}) baseBinaryKernel<{{ d1 }}, {{ dim }}, {{ op['struct'] }}<{{ d1 }}>>(gi, tensor_a_noncontig, tensor_b_noncontig, tensor_out_noncontig, {% if d1[0] == 'u' %} ({{ d1 }})({{ d1[1:] }}) {% else %} ({{ d1 }}) {% endif %}pcs.alpha, {% if d1[0] == 'u' %} ({{ d1 }})({{ d1[1:] }}) {% else %} ({{ d1 }}) {% endif %}pcs.scalar_value);
+    {% endfor %}
+    {% endif %}
+    
+    {% endfor %}
+    {% endfor %}
 }
