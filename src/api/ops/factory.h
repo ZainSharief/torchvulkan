@@ -111,10 +111,10 @@ inline void dispatch_copy_shader(const at::Tensor& src, const at::Tensor& dst)
     }
 
     PushConstantBuilder pcs{};
-    pcs.push(numel)
-        .push_array(sizes)
+    pcs.push_array(sizes)
         .push_array(strides_in)
-        .push_array(strides_out);
+        .push_array(strides_out)
+        .push(numel);
 
     uint32_t groupX = (numel + (workgroupSizeX - 1)) / workgroupSizeX;
 
