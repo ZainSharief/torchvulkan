@@ -85,15 +85,16 @@ inline void dispatch_copy_shader(const at::Tensor& src, const at::Tensor& dst)
         TORCH_CHECK(false, "torchvulkan [WARNING]: Coalesced dimensions (", out_dims, ") exceed maximum supported (", MAX_DIMS, "). Falling back to CPU.");
     }
 
-    SpecializationBuilder spd{};
-    spd.push(out_dims);
-    uint32_t key = out_dims;
-    SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
-
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
     torchvulkan::ShaderID shader_id = get_copy_shader_id(dst.scalar_type());
     uint32_t vecSize = get_dtype_vec_size(dst.scalar_type()); // our workgroup must match the shader workgroup
     uint32_t workgroupSizeX = get_dtype_workgroup_size(dst.scalar_type(), vecSize);
+
+    SpecializationBuilder spd{};
+    spd.push(out_dims)
+        .push(workgroupSizeX);
+    uint32_t key = (workgroupSizeX << 4) | out_dims;
+    SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
 
     IntDivider sizes[MAX_DIMS];
     uint32_t strides_in[MAX_DIMS] = {0};

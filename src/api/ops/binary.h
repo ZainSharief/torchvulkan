@@ -25,21 +25,21 @@ inline torchvulkan::ShaderID get_binaryop_shader_id(at::ScalarType dtype)
 {
     switch (dtype) 
     {
-        case at::kDouble: return torchvulkan::ShaderID::BINARYOP_FLOAT64_T_ENTRYPOINT;
-        case at::kLong: return torchvulkan::ShaderID::BINARYOP_INT64_T_ENTRYPOINT;
-        case at::kUInt64: return torchvulkan::ShaderID::BINARYOP_UINT64_T_ENTRYPOINT;
+        case at::kDouble: return torchvulkan::ShaderID::BINARYOP_F64_ENTRYPOINT;
+        case at::kLong: return torchvulkan::ShaderID::BINARYOP_I64_ENTRYPOINT;
+        case at::kUInt64: return torchvulkan::ShaderID::BINARYOP_U64_ENTRYPOINT;
         
-        case at::kFloat: return torchvulkan::ShaderID::BINARYOP_FLOAT32_T_ENTRYPOINT;
-        case at::kInt: return torchvulkan::ShaderID::BINARYOP_INT32_T_ENTRYPOINT;
-        case at::kUInt32: return torchvulkan::ShaderID::BINARYOP_UINT32_T_ENTRYPOINT;
+        case at::kFloat: return torchvulkan::ShaderID::BINARYOP_F32_ENTRYPOINT;
+        case at::kInt: return torchvulkan::ShaderID::BINARYOP_I32_ENTRYPOINT;
+        case at::kUInt32: return torchvulkan::ShaderID::BINARYOP_U32_ENTRYPOINT;
         
-        case at::kHalf: return torchvulkan::ShaderID::BINARYOP_FLOAT16_T_ENTRYPOINT;
-        case at::kShort: return torchvulkan::ShaderID::BINARYOP_INT16_T_ENTRYPOINT;
-        case at::kUInt16: return torchvulkan::ShaderID::BINARYOP_UINT16_T_ENTRYPOINT;
+        case at::kHalf: return torchvulkan::ShaderID::BINARYOP_F16_ENTRYPOINT;
+        case at::kShort: return torchvulkan::ShaderID::BINARYOP_I16_ENTRYPOINT;
+        case at::kUInt16: return torchvulkan::ShaderID::BINARYOP_U16_ENTRYPOINT;
         
-        case at::kChar: return torchvulkan::ShaderID::BINARYOP_INT8_T_ENTRYPOINT;
-        case at::kByte: return torchvulkan::ShaderID::BINARYOP_UINT8_T_ENTRYPOINT;
-        case at::kBool: return torchvulkan::ShaderID::BINARYOP_UINT8_T_ENTRYPOINT;
+        case at::kChar: return torchvulkan::ShaderID::BINARYOP_I8_ENTRYPOINT;
+        case at::kByte: return torchvulkan::ShaderID::BINARYOP_U8_ENTRYPOINT;
+        case at::kBool: return torchvulkan::ShaderID::BINARYOP_U8_ENTRYPOINT;
         
         default: TORCH_CHECK(false, "torchvulkan [ERROR]: Data type ", c10::toString(dtype), " not supported for binary operations.");
     }
@@ -91,8 +91,9 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, con
     SpecializationBuilder spd{};
     spd.push(op)
        .push(contiguous)
-       .push(out_dims);
-    uint32_t key = (out_dims << 5) | (contiguous << 4) | op;
+       .push(out_dims)
+       .push(workgroupSizeX);
+    uint32_t key = (workgroupSizeX << 9) | (out_dims << 5) | (contiguous << 4) | op;
     SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
 
     IntDivider sizes[MAX_DIMS];
@@ -181,8 +182,9 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, con
     SpecializationBuilder spd{};
     spd.push(op)
        .push(contiguous)
-       .push(out_dims);
-    uint32_t key = (out_dims << 5) | (contiguous << 4) | op;
+       .push(out_dims)
+       .push(workgroupSizeX);
+    uint32_t key = (workgroupSizeX << 9) | (out_dims << 5) | (contiguous << 4) | op;
     SpecializationArgs specialization = {spd.data(), spd.offsets(), spd.sizes(), spd.numConstants(), key};
 
     IntDivider sizes[MAX_DIMS];
