@@ -82,7 +82,7 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Tensor& other, con
 
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
     uint32_t vecSize = get_dtype_vec_size(promoted_type);
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted_type);
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted_type, vecSize);
 
     uint32_t contiguous = iter.is_contiguous() ? 1 : 0;
     torchvulkan::ShaderID shader_id = get_binaryop_shader_id(promoted_type);
@@ -172,7 +172,7 @@ at::Tensor binary_op_vulkan(const at::Tensor& self, const at::Scalar& other, con
     
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
     uint32_t vecSize = get_dtype_vec_size(promoted_type);
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted_type);
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted_type, vecSize);
 
     uint32_t contiguous = iter.is_contiguous();
     torchvulkan::ShaderID shader_id = get_binaryop_shader_id(promoted_type);

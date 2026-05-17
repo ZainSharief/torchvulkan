@@ -79,6 +79,7 @@ inline void dispatch_copy_shader(const at::Tensor& src, const at::Tensor& dst)
         .build();
 
     uint32_t numel = iter.numel();
+    if (numel == 0) return;
     int32_t out_dims = static_cast<int32_t>(iter.ndim());
     if (out_dims > MAX_DIMS) {
         TORCH_CHECK(false, "torchvulkan [WARNING]: Coalesced dimensions (", out_dims, ") exceed maximum supported (", MAX_DIMS, "). Falling back to CPU.");
@@ -91,7 +92,8 @@ inline void dispatch_copy_shader(const at::Tensor& src, const at::Tensor& dst)
 
     DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
     torchvulkan::ShaderID shader_id = get_copy_shader_id(dst.scalar_type());
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(dst.scalar_type());
+    uint32_t vecSize = get_dtype_vec_size(dst.scalar_type()); // our workgroup must match the shader workgroup
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(dst.scalar_type(), vecSize);
 
     IntDivider sizes[MAX_DIMS];
     uint32_t strides_in[MAX_DIMS] = {0};
