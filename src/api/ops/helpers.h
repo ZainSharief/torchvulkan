@@ -122,52 +122,19 @@ inline bool is_dtype_supported(at::ScalarType dtype)
 
 inline int get_dtype_vec_size(at::ScalarType dtype) 
 {
-    switch (dtype) 
-    {
-        case at::kDouble: return 2;
-        case at::kLong: return 2;
-        case at::kUInt64: return 2;
-        
-        case at::kFloat: return 4;
-        case at::kInt: return 4;
-        case at::kUInt32: return 4;
-        
-        case at::kHalf: return 4;
-        case at::kBFloat16: return 4;
-        case at::kShort: return 4;
-        case at::kUInt16: return 4;
-        
-        case at::kChar: return 4; 
-        case at::kByte: return 4; 
-        case at::kBool: return 4; 
-        
-        default: return 0;
-    }
+    size_t bytes = c10::elementSize(dtype);
+    if (bytes == 0) return 1;
+    int size = (int)(16 / bytes);
+    size = size <= 4 ? size : 4; // max vector size is 4
+    return size; 
 }
 
-inline int get_dtype_workgroup_size(at::ScalarType dtype) 
+inline int get_dtype_workgroup_size(at::ScalarType dtype, uint32_t vecSize) 
 {
-    switch (dtype) 
-    {
-        case at::kDouble: return 64;
-        case at::kLong: return 64;
-        case at::kUInt64: return 64;
-        
-        case at::kFloat: return 64;
-        case at::kInt: return 64;
-        case at::kUInt32: return 64;
-        
-        case at::kHalf: return 128;
-        case at::kBFloat16: return 128;
-        case at::kShort: return 128;
-        case at::kUInt16: return 128;
-        
-        case at::kChar: return 256; 
-        case at::kByte: return 256; 
-        case at::kBool: return 256; 
-        
-        default: return 0;
-    }
+    size_t bytes = c10::elementSize(dtype);
+    if (bytes == 0 || vecSize == 0) return 1;
+    int size = (int)(1024 / (bytes * vecSize)); // max out memory bandwidth
+    return size;
 }
 
 inline std::vector<int64_t> compute_strides(
