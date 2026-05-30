@@ -1,0 +1,158 @@
+
+
+[[vk::constant_id(0)]] const int WG_x = 0;
+[[vk::constant_id(1)]] const int WG_y = 0;
+
+struct PushConstants {
+    uint M;
+    uint N;
+    uint K;
+    uint stride_A;
+    uint stride_B;
+    uint stride_C;
+    float alpha;
+    float beta;
+};
+
+[[vk::push_constant]] ConstantBuffer<PushConstants> pcs;
+
+static const int TILE_M = 128;
+static const int TILE_N = 128;
+static const int TILE_K = 16;
+static const int THREAD_SIZE_M = 8;
+static const int THREAD_SIZE_N = 8;
+
+// groupshared memory for the current block
+groupshared float smemA[TILE_M][TILE_K];
+groupshared float smemB[TILE_K][TILE_N];
+
+void matmulKernel(
+    uint3 gi: SV_DispatchThreadID,
+    uint3 li: SV_GroupThreadID,
+    StructuredBuffer<vector<{{ d1 }}, {{ v1 }}>> tensor_a,
+    StructuredBuffer<vector<{{ d1 }}, {{ v1 }}>> tensor_b,
+    RWStructuredBuffer<vector<{{ d1 }}, {{ v1 }}>> tensor_out
+)
+{
+    // this is our block, which each thread will compute
+    float accum[THREAD_SIZE_M][THREAD_SIZE_N] = { 0.0 }; 
+
+    // registers used to hold the current slice of A and B loaded from shared memory
+    float fragA[THREAD_SIZE_M];
+    float fragB[THREAD_SIZE_N];
+
+    uint thread_idx = li.y * WG_x + li.x;
+    uint threads = WG_x * WG_y;
+    uint thread_row_start = li.y * THREAD_SIZE_M;
+    uint thread_col_start = li.x * THREAD_SIZE_N;
+
+    uint vectors_A = (TILE_M * TILE_K) / {{ v1 }};
+    uint vectors_B = (TILE_K * TILE_N) / {{ v1 }};
+    uint loads_per_thread_A = vectors_A / threads;
+    uint loads_per_thread_B = vectors_B / threads;
+
+    for (int k_block = 0; k_block < pcs.K; k_block += TILE_K) 
+    {
+        [unroll] for (int i = 0; i < loads_per_thread_A; ++i) 
+        {
+            uint load_idx = thread_idx + (i * threads);
+
+            uint vectors_per_row = TILE_K / {{ v1 }};
+            uint row_A = load_idx / vectors_per_row; 
+            uint col_A = (load_idx % vectors_per_row) * {{ v1 }};
+
+            uint global_row = (gi.y / WG_y) * TILE_M + row_A;
+            uint global_col = k_block + col_A;
+
+            vector<{{ d1 }}, {{ v1 }}> loaded_vec = { 0 };
+            if (global_row < pcs.M && global_col < pcs.K) {
+                uint flat_idx = (global_row * pcs.stride_A) + global_col;
+                loaded_vec = tensor_a[flat_idx / {{ v1 }}];
+            }
+
+            [unroll] for (int v = 0; v < {{ v1 }}; ++v) {
+                smemA[row_A][col_A + v] = loaded_vec[v];
+            }
+        }
+
+        [unroll] for (int i = 0; i < loads_per_thread_B; ++i) 
+        {
+            uint load_idx = thread_idx + (i * threads);
+
+            uint vectors_per_row = TILE_N / {{ v1 }};
+            uint row_B = load_idx / vectors_per_row;
+            uint col_B = (load_idx % vectors_per_row) * {{ v1 }};
+
+            uint global_row = k_block + row_B; 
+            uint global_col = (gi.x / WG_x) * TILE_N + col_B;
+
+            vector<{{ d1 }}, {{ v1 }}> loaded_vec = { 0 };
+            if (global_row < pcs.K && global_col < pcs.N) {
+                uint flat_idx = (global_row * pcs.stride_B) + global_col;
+                loaded_vec = tensor_b[flat_idx / {{ v1 }}];
+            }
+
+            [unroll] for (int v = 0; v < {{ v1 }}; ++v) {
+                smemB[row_B][col_B + v] = loaded_vec[v];
+            }
+        }
+
+        GroupMemoryBarrierWithGroupSync();
+        
+        for (int k = 0; k < TILE_K; ++k) 
+        {    
+            [unroll] for (int i = 0; i < THREAD_SIZE_M; ++i) {
+                fragA[i] = smemA[thread_row_start + i][k]; 
+            }
+            [unroll] for (int j = 0; j < THREAD_SIZE_N; ++j) {
+                fragB[j] = smemB[k][thread_col_start + j];
+            }
+
+            [unroll] for (int i = 0; i < THREAD_SIZE_M; ++i) {
+                [unroll] for (int j = 0; j < THREAD_SIZE_N; ++j) {
+                    accum[i][j] += fragA[i] * fragB[j];
+                }
+            }
+        }
+
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    uint global_row_start = (gi.y / WG_y) * TILE_M + thread_row_start;
+    uint global_col_start = (gi.x / WG_x) * TILE_N + thread_col_start;
+
+    uint vectors_per_row = THREAD_SIZE_N / {{ v1 }};
+
+    [unroll] for (int i = 0; i < THREAD_SIZE_M; ++i) 
+    {        
+        uint g_row = global_row_start + i;
+        [unroll] for (int j_vec = 0; j_vec < vectors_per_row; ++j_vec) 
+        {
+            uint g_col = global_col_start + (j_vec * {{ v1 }});            
+            vector<{{ d1 }}, {{ v1 }}> out_vec = { 0 };
+
+            [unroll] for (int v = 0; v < {{ v1 }}; ++v) {
+                out_vec[v] = accum[i][j_vec * {{ v1 }} + v] * pcs.alpha;
+            }
+
+            if (g_row < pcs.M && g_col < pcs.N) {
+                uint flat_idx = (g_row * pcs.stride_C) + g_col;
+                tensor_out[flat_idx / {{ v1 }}] = out_vec;
+            }
+        }
+    }
+}
+
+[[vk::binding(0, 0)]] StructuredBuffer<vector<{{ d1 }}, {{ v1 }}>> tensor_a;
+[[vk::binding(1, 0)]] StructuredBuffer<vector<{{ d1 }}, {{ v1 }}>> tensor_b;
+[[vk::binding(2, 0)]] RWStructuredBuffer<vector<{{ d1 }}, {{ v1 }}>> tensor_out;
+
+[shader("compute")]
+[numthreads(WG_x, WG_y, 1)]
+void main(
+    uint3 gi: SV_DispatchThreadID,
+    uint3 li: SV_GroupThreadID
+) 
+{
+    matmulKernel(gi, li, tensor_a, tensor_b, tensor_out);
+}

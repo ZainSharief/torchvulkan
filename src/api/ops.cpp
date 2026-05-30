@@ -2,6 +2,7 @@
 #include <ATen/native/CPUFallback.h>
 #include "api/ops/factory.h"
 #include "api/ops/binary.h"
+#include "api/ops/matmul.h"
 
 using namespace torchvulkan;
 
@@ -54,4 +55,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 
     // binary - Atan2
     m.impl("atan2", &atan2_vulkan);
+
+    // matmul
+    m.impl("mm", &mm_vulkan);
 }

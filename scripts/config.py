@@ -59,5 +59,10 @@ SHADERS = [
         'dtypes' : DTYPES_SUPERSET,
         'kwargs' : {}
     },
+    {
+        'name' : 'matmul.slang.j2',
+        'dtypes' : DTYPES,
+        'kwargs' : {}
+    },
 ]
 
