@@ -30,7 +30,7 @@ BYTES = [
 
 INTEGERS = UNSIGNED_INTEGERS + SIGNED_INTEGERS
 DTYPES = INTEGERS + FLOATS
-DTYPES_SUPERSET = [[i[0], j[0]] for i in DTYPES for j in DTYPES if i != j] 
+DTYPES_SUPERSET = [[i[0], j[0]] for i in DTYPES for j in DTYPES] 
 
 SHADERS = [
     {
