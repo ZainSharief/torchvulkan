@@ -18,11 +18,13 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     // factory
     m.impl("empty.memory_format", &empty_memory_format_vulkan);
     m.impl("empty_strided", &empty_strided_vulkan);
-    m.impl("_copy_from", &copy_from_vulkan);
     m.impl("as_strided", &as_strided_vulkan);
     m.impl("resize_", &resize_vulkan);
     m.impl("contiguous", &contiguous_vulkan);
     m.impl("clone", &clone_vulkan);
+    m.impl("_copy_from", &copy_from_vulkan);
+    m.impl("_copy_from_and_resize", &copy_from_and_resize_vulkan);
+    m.impl("copy_", &copy_vulkan_);
 
     // binary - Add
     m.impl("add.Tensor", &add_vulkan);

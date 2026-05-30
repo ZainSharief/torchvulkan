@@ -1,0 +1,54 @@
+#include "helpers/int_divider.slang.j2"
+
+[[vk::constant_id(0)]] const uint NDIM = 0;
+[[vk::constant_id(1)]] const uint WG_x = 0;
+[[vk::constant_id(2)]] const uint IS_BOOL_CAST = 0;
+
+struct PushConstants
+{
+    IntDivider sizes[4];
+    uint4 strides_in;
+    uint4 strides_out;
+    uint numel;    
+};
+
+[[vk::push_constant]] ConstantBuffer<PushConstants> pcs;
+
+void castKernel<
+    let ndim : int
+>(
+    uint3 gi: SV_DispatchThreadID,
+    StructuredBuffer<{{ d1 }}> tensor_in,
+    RWStructuredBuffer<{{ d2 }}> tensor_out
+)
+{
+    uint idx = gi.x;
+    if (idx >= pcs.numel) return;
+
+    uint idx_in = 0;
+    uint idx_out = 0;
+    uint linear_idx = idx;
+
+    [unroll]
+    for (int i = 0; i < ndim; i++) {
+        uint next_linear_idx = fast_div(linear_idx, pcs.sizes[i]);
+        uint coord = linear_idx - (next_linear_idx * pcs.sizes[i].divisor);
+        linear_idx = next_linear_idx;
+        idx_in += coord * pcs.strides_in[i];
+        idx_out += coord * pcs.strides_out[i];
+    }
+
+    if (IS_BOOL_CAST == 1) tensor_out[idx_out] = (tensor_in[idx_in] != 0) ? {{ d2 }}(1) : {{ d2 }}(0);
+    else tensor_out[idx_out] = {{ d2 }}(tensor_in[idx_in]);
+}
+
+[[vk::binding(0, 0)]] StructuredBuffer<{{ d1 }}> tensor_in;
+[[vk::binding(1, 0)]] RWStructuredBuffer<{{ d2 }}> tensor_out;
+
+[shader("compute")]
+[numthreads(WG_x, 1, 1)]
+void main(uint3 gi: SV_DispatchThreadID) {
+    {% for dim in range(MAX_DIMS+1) %} 
+    if (NDIM == {{ dim }}) castKernel<{{ dim }}>(gi, tensor_in, tensor_out); 
+    {% endfor %}
+}

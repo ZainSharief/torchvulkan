@@ -1,6 +1,7 @@
-#include "helpers/int_divider.slang"
+#include "helpers/int_divider.slang.j2"
 
 [[vk::constant_id(0)]] const int NDIM = 0;
+[[vk::constant_id(1)]] const int WG_x = 0;
 
 struct PushConstants
 {
@@ -38,4 +39,15 @@ void copyKernel<
     }
 
     tensor_out[idx_out] = tensor_in[idx_in];
+}
+
+[[vk::binding(0, 0)]] StructuredBuffer<{{ d1 }}> tensor_in;
+[[vk::binding(1, 0)]] RWStructuredBuffer<{{ d1 }}> tensor_out;
+
+[shader("compute")]
+[numthreads(WG_x, 1, 1)]
+void main(uint3 gi: SV_DispatchThreadID) {
+    {% for dim in range(MAX_DIMS+1) %} 
+    if (NDIM == {{ dim }}) copyKernel<{{ d1 }}, {{ dim }}>(gi, tensor_in, tensor_out); 
+    {% endfor %}
 }
