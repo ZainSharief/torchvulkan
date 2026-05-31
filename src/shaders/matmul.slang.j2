@@ -22,9 +22,11 @@ static const int TILE_K = 16;
 static const int THREAD_SIZE_M = 8;
 static const int THREAD_SIZE_N = 8;
 
-// groupshared memory for the current block
-groupshared float smemA[TILE_M][TILE_K];
-groupshared float smemB[TILE_K][TILE_N];
+// each 32-bit word is assigned to a given bank % 32, so to prevent
+// bank conflicts we pad the shared memory arrays by 1 element ({{ v1 }}) 
+// at the end of each row
+groupshared {{ d1 }} smemA[TILE_M][TILE_K + {{ v1 }}];
+groupshared {{ d1 }} smemB[TILE_K][TILE_N + {{ v1 }}];
 
 void matmulKernel(
     uint3 gi: SV_DispatchThreadID,
@@ -34,12 +36,7 @@ void matmulKernel(
     RWStructuredBuffer<vector<{{ d1 }}, {{ v1 }}>> tensor_out
 )
 {
-    // this is our block, which each thread will compute
-    float accum[THREAD_SIZE_M][THREAD_SIZE_N] = { 0.0 }; 
-
-    // registers used to hold the current slice of A and B loaded from shared memory
-    float fragA[THREAD_SIZE_M];
-    float fragB[THREAD_SIZE_N];
+    vector<{{ d1 }}, {{ v1 }}> accum[THREAD_SIZE_M][THREAD_SIZE_N / {{ v1 }}] = { 0 };
 
     uint thread_idx = li.y * WG_x + li.x;
     uint threads = WG_x * WG_y;
@@ -53,6 +50,7 @@ void matmulKernel(
 
     for (int k_block = 0; k_block < pcs.K; k_block += TILE_K) 
     {
+        // loads a TILE_M x TILE_K block of A into shared memory
         [unroll] for (int i = 0; i < loads_per_thread_A; ++i) 
         {
             uint load_idx = thread_idx + (i * threads);
@@ -75,6 +73,7 @@ void matmulKernel(
             }
         }
 
+        // loads a TILE_K x TILE_N block of B into shared memory
         [unroll] for (int i = 0; i < loads_per_thread_B; ++i) 
         {
             uint load_idx = thread_idx + (i * threads);
@@ -97,47 +96,55 @@ void matmulKernel(
             }
         }
 
+        // we need to wait for each thread to finish loading their portion
+        // of the tiles into shared memory before we can start the computation
         GroupMemoryBarrierWithGroupSync();
         
-        for (int k = 0; k < TILE_K; ++k) 
+        // compute the matmul for this tile
+        [unroll] for (int k = 0; k < TILE_K; k++) 
         {    
-            [unroll] for (int i = 0; i < THREAD_SIZE_M; ++i) {
-                fragA[i] = smemA[thread_row_start + i][k]; 
-            }
-            [unroll] for (int j = 0; j < THREAD_SIZE_N; ++j) {
-                fragB[j] = smemB[k][thread_col_start + j];
+            vector<{{ d1 }}, {{ v1 }}> b_frag[THREAD_SIZE_N / {{ v1 }}]; 
+            
+            [unroll] for (int j = 0; j < THREAD_SIZE_N / {{ v1 }}; ++j) {
+                vector<{{ d1 }}, {{ v1 }}> tmp;
+                [unroll] for (int v = 0; v < {{ v1 }}; ++v) {
+                    tmp[v] = smemB[k][thread_col_start + j * {{ v1 }} + v];
+                }
+                b_frag[j] = tmp;
             }
 
-            [unroll] for (int i = 0; i < THREAD_SIZE_M; ++i) {
-                [unroll] for (int j = 0; j < THREAD_SIZE_N; ++j) {
-                    accum[i][j] += fragA[i] * fragB[j];
+            [unroll] 
+            for (int i = 0; i < THREAD_SIZE_M; ++i) 
+            {
+                {{ d1 }} a_val = smemA[thread_row_start + i][k];
+                
+                [unroll] for (int j = 0; j < THREAD_SIZE_N / {{ v1 }}; ++j) {
+                    accum[i][j] += a_val * b_frag[j];
                 }
             }
         }
 
+        // we need to wait for all threads to finish computing on the current tile
+        // before we can start loading the next tile into shared memory, since we reuse the same
+        // shared memory buffers for each tile
         GroupMemoryBarrierWithGroupSync();
     }
 
     uint global_row_start = (gi.y / WG_y) * TILE_M + thread_row_start;
     uint global_col_start = (gi.x / WG_x) * TILE_N + thread_col_start;
-
     uint vectors_per_row = THREAD_SIZE_N / {{ v1 }};
 
+    // write the results back to global memory
     [unroll] for (int i = 0; i < THREAD_SIZE_M; ++i) 
     {        
         uint g_row = global_row_start + i;
         [unroll] for (int j_vec = 0; j_vec < vectors_per_row; ++j_vec) 
         {
             uint g_col = global_col_start + (j_vec * {{ v1 }});            
-            vector<{{ d1 }}, {{ v1 }}> out_vec = { 0 };
-
-            [unroll] for (int v = 0; v < {{ v1 }}; ++v) {
-                out_vec[v] = accum[i][j_vec * {{ v1 }} + v] * pcs.alpha;
-            }
 
             if (g_row < pcs.M && g_col < pcs.N) {
                 uint flat_idx = (g_row * pcs.stride_C) + g_col;
-                tensor_out[flat_idx / {{ v1 }}] = out_vec;
+                tensor_out[flat_idx / {{ v1 }}] = accum[i][j_vec] * ({{ d1 }})pcs.alpha;
             }
         }
     }
